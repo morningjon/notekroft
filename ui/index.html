@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TwoNote</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img src="/icon.svg" alt="" width="22" height="22" />
+          <span>TwoNote</span>
+        </div>
+
+        <div class="toolbar" id="toolbar" role="toolbar" aria-label="Formatting">
+          <button type="button" class="tool wide" data-act="styles" title="Text style">Styles <span class="caret">▾</span></button>
+          <span class="tool-sep"></span>
+          <button type="button" class="tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button type="button" class="tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button type="button" class="tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+          <button type="button" class="tool" data-cmd="strikeThrough" title="Strikethrough (Ctrl+-)"><s>S</s></button>
+          <button type="button" class="tool" data-act="highlight" title="Highlight (Ctrl+Alt+H)"><span class="hl">ab</span></button>
+          <button type="button" class="tool" data-cmd="removeFormat" title="Clear formatting">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M5 4h10M10 4l-2.5 12M4 17l12-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+          <span class="tool-sep"></span>
+          <button type="button" class="tool" data-cmd="insertUnorderedList" title="Bullet list (Ctrl+.)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="5" r="1.5"/><circle cx="4" cy="10" r="1.5"/><circle cx="4" cy="15" r="1.5"/></g><path d="M8 5h9M8 10h9M8 15h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="tool" data-cmd="insertOrderedList" title="Numbered list (Ctrl+/)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><text x="1" y="7.5" font-size="6.5" fill="currentColor" font-family="sans-serif">1</text><text x="1" y="12.5" font-size="6.5" fill="currentColor" font-family="sans-serif">2</text><text x="1" y="17.5" font-size="6.5" fill="currentColor" font-family="sans-serif">3</text><path d="M8 5h9M8 10h9M8 15h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="tool" data-act="todo" title="To-do tag (Ctrl+1)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 10.5l2.5 2.5 4.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <span class="tool-sep"></span>
+          <button type="button" class="tool" data-act="table" title="Insert table (or press Tab after some text)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 8h15M2.5 12.3h15M7.5 3.5v13M12.5 3.5v13" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+          <button type="button" class="tool" data-act="image" title="Insert picture (or paste, or drop one on the page)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="8" r="1.5" fill="currentColor"/><path d="M3 15l4.5-4 3 2.5 3-3.5 3.5 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" class="tool" data-act="link" title="Insert link (Ctrl+K)">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M8.5 11.5a3.2 3.2 0 004.5 0l3-3a3.2 3.2 0 00-4.5-4.5l-1 1M11.5 8.5a3.2 3.2 0 00-4.500 0l-3 3a3.2 3.2 0 004.5 4.5l1-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="search" id="search-box">
+          <input id="search" type="search" placeholder="Search all notebooks (Ctrl+E)" autocomplete="off" spellcheck="false" aria-label="Search all notebooks" />
+          <div id="search-results" class="search-results" hidden></div>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <nav class="nav" aria-label="Notebook navigation">
+          <button type="button" id="nb-picker" class="nb-picker" title="Switch notebook">
+            <span class="nb-dot"></span>
+            <span id="nb-title" class="nb-title">No notebook</span>
+            <span class="caret">▾</span>
+          </button>
+          <div class="nav-cols">
+            <div class="col sections">
+              <ul id="sections" aria-label="Sections"></ul>
+              <button type="button" id="add-section" class="add">+ Add section</button>
+            </div>
+            <div class="col pages">
+              <ul id="pages" aria-label="Pages"></ul>
+              <button type="button" id="add-page" class="add">+ Add page</button>
+            </div>
+          </div>
+        </nav>
+
+        <main class="editor" id="editor">
+          <div class="sheet" id="page" hidden>
+            <div class="page-head">
+              <input id="title" class="title" type="text" placeholder="Untitled page" maxlength="200" autocomplete="off" aria-label="Page title" />
+              <div id="stamp" class="stamp"></div>
+            </div>
+            <div id="canvas" class="canvas"></div>
+          </div>
+          <div class="empty" id="empty"></div>
+        </main>
+      </div>
+
+      <footer class="status">
+        <button type="button" id="lib-path" class="lib-path"></button>
+        <span id="save-state" class="save-state"></span>
+      </footer>
+    </div>
+    <input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

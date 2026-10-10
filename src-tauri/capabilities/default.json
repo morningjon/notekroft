@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the main window may ask the Rust side to do, beyond TwoNote's own commands.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-destroy",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    "opener:allow-reveal-item-in-dir"
+  ]
+}

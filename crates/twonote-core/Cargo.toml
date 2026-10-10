@@ -1,0 +1,18 @@
+[package]
+name = "twonote-core"
+description = "Storage, model and search for TwoNote notebooks. No UI, no network."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ammonia = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"

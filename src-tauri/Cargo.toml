@@ -1,0 +1,22 @@
+[package]
+name = "twonote"
+description = "A local-first, open source notebook app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "twonote_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+twonote-core = { path = "../crates/twonote-core" }

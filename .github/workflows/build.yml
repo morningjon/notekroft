@@ -48,7 +48,7 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Core and importer tests
-        run: cargo test --workspace --exclude twonote
+        run: cargo test --workspace --exclude notekroft
       - name: Fetch real OneNote files to test the importer against
         run: |
           git init -q "$RUNNER_TEMP/onenote.rs"
@@ -57,9 +57,9 @@ jobs:
           git fetch -q --depth 1 origin "$ONENOTE_SAMPLES_COMMIT"
           git checkout -q FETCH_HEAD
       - name: Import every sample file
-        run: cargo test -p twonote-onenote --test samples -- --nocapture
+        run: cargo test -p notekroft-onenote --test samples -- --nocapture
         env:
-          TWONOTE_ONE_SAMPLES: ${{ runner.temp }}/onenote.rs/crates/parser/tests/samples
+          NOTEKROFT_ONE_SAMPLES: ${{ runner.temp }}/onenote.rs/crates/parser/tests/samples
       - name: Build the interface
         run: npm run build
       - name: Interface tests
@@ -114,13 +114,13 @@ jobs:
           key: ${{ matrix.name }}
       - run: npm ci
       - name: Core and importer tests
-        run: cargo test --workspace --exclude twonote
+        run: cargo test --workspace --exclude notekroft
       - name: Build the app
         run: npm run tauri build -- ${{ matrix.args }}
       - name: Upload the app
         uses: actions/upload-artifact@v4
         with:
-          name: TwoNote-${{ matrix.name }}
+          name: NoteKroft-${{ matrix.name }}
           if-no-files-found: error
           path: |
             ${{ matrix.bundle-dir }}/dmg/*.dmg

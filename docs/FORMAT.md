@@ -1,4 +1,4 @@
-# TwoNote library format, version 1
+# NoteKroft library format, version 1
 
 A library is a directory. Everything in it is UTF-8 JSON or an image file, so
 it can be read, backed up, diffed and synced with ordinary tools.
@@ -18,7 +18,7 @@ it can be read, backed up, diffed and synced with ordinary tools.
     <timestamp>-<kind>-<id>-<suffix>
 ```
 
-Ids are UUIDs. TwoNote only accepts ids made of ASCII letters, digits and
+Ids are UUIDs. NoteKroft only accepts ids made of ASCII letters, digits and
 hyphens, at most 64 characters. Timestamps are milliseconds since the Unix
 epoch, UTC.
 
@@ -38,7 +38,7 @@ epoch, UTC.
 
 `sections` gives the display order. A notebook whose `format` is higher than
 the running version understands is left alone and not shown, so an older
-TwoNote never rewrites data it cannot fully read.
+NoteKroft never rewrites data it cannot fully read.
 
 ## section.json
 
@@ -80,7 +80,7 @@ lines behind the page. `color` is the page's background colour as `#rrggbb`.
 
 `reflow` is optional and normally absent. Importers set it to `true` on pages
 whose block positions came from another application. The first time such a
-page is opened, TwoNote moves overlapping blocks apart and saves the page
+page is opened, NoteKroft moves overlapping blocks apart and saves the page
 without the flag.
 
 Blocks sit on a freeform canvas. `x`, `y`, `w` and `h` are CSS pixels from
@@ -172,7 +172,7 @@ segments, which is how lines, arrows and rectangles keep their corners.
 ## .trash
 
 Deleting a page, section or notebook moves it here with a timestamped name.
-TwoNote never empties this folder; remove items yourself when you are sure.
+NoteKroft never empties this folder; remove items yourself when you are sure.
 To restore something, move it back and re-add its id to the parent's
 `sections` or `pages` list.
 

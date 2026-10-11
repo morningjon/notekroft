@@ -1,19 +1,19 @@
 //! Runs the importer over real OneNote files.
 //!
-//! TwoNote does not ship any `.one` files, so this test looks for them in the
-//! directory named by `TWONOTE_ONE_SAMPLES` and is skipped when that is not
+//! NoteKroft does not ship any `.one` files, so this test looks for them in the
+//! directory named by `NOTEKROFT_ONE_SAMPLES` and is skipped when that is not
 //! set. The parser project keeps a good collection:
 //!
 //! ```sh
 //! git clone https://github.com/msiemens/onenote.rs /tmp/onenote.rs
-//! TWONOTE_ONE_SAMPLES=/tmp/onenote.rs/crates/parser/tests/samples \
-//!     cargo test -p twonote-onenote --test samples -- --nocapture
+//! NOTEKROFT_ONE_SAMPLES=/tmp/onenote.rs/crates/parser/tests/samples \
+//!     cargo test -p notekroft-onenote --test samples -- --nocapture
 //! ```
 
 use std::path::{Path, PathBuf};
 
-use twonote_core::{html, Block, Library};
-use twonote_onenote::import_files;
+use notekroft_core::{html, Block, Library};
+use notekroft_onenote::import_files;
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -34,8 +34,8 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 
 #[test]
 fn every_sample_imports_into_valid_pages() {
-    let Some(dir) = std::env::var_os("TWONOTE_ONE_SAMPLES") else {
-        eprintln!("TWONOTE_ONE_SAMPLES is not set; skipping the sample import test");
+    let Some(dir) = std::env::var_os("NOTEKROFT_ONE_SAMPLES") else {
+        eprintln!("NOTEKROFT_ONE_SAMPLES is not set; skipping the sample import test");
         return;
     };
     let mut files = Vec::new();
@@ -102,7 +102,7 @@ fn every_sample_imports_into_valid_pages() {
                         } => {
                             assert!(!text.is_empty(), "{name}: empty text block");
                             assert!(*x >= 0.0 && *y >= 0.0 && *w >= 60.0, "{name}: bad geometry");
-                            // The importer must emit TwoNote's stored form
+                            // The importer must emit NoteKroft's stored form
                             // directly: sanitising again is a no-op.
                             assert_eq!(&html::clean(text), text, "{name}: page {:?}", page.title);
                             assert!(

@@ -616,7 +616,7 @@ export class Editor {
 
   /** Browsers express formatting in several ways and leave debris behind
    *  when lines are joined. Bring a container back to the stored form:
-   *  no <font>, only TwoNote's style properties, and nothing that merely
+   *  no <font>, only NoteKroft's style properties, and nothing that merely
    *  restates what the text would look like anyway. */
   private tidy(content: HTMLElement) {
     if (!content.querySelector('font, [style]')) return;
@@ -862,7 +862,7 @@ export class Editor {
     this.changed(true);
   }
 
-  /** Returns false if the address is not one TwoNote will link to. */
+  /** Returns false if the address is not one NoteKroft will link to. */
   insertLink(input: string): boolean {
     const url = normaliseUrl(input);
     if (!url) return false;

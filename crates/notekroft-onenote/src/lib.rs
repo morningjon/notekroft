@@ -1,12 +1,12 @@
-//! Imports Microsoft OneNote files into a TwoNote library.
+//! Imports Microsoft OneNote files into a NoteKroft library.
 //!
 //! Reading the `.one` and `.onetoc2` formats is done by the
 //! [`onenote_parser`] crate, an independent implementation of Microsoft's
 //! published MS-ONE and MS-ONESTORE specifications. This crate maps what it
-//! reads onto TwoNote's own pages.
+//! reads onto NoteKroft's own pages.
 //!
 //! The import is read-only with respect to the OneNote files and additive
-//! with respect to the library: each OneNote section becomes a new TwoNote
+//! with respect to the library: each OneNote section becomes a new NoteKroft
 //! section, and nothing already in the notebook is touched.
 
 mod convert;
@@ -15,10 +15,10 @@ mod html;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
+use notekroft_core::Library;
 use onenote_parser::section::{Section, SectionEntry};
 use onenote_parser::Parser;
 use serde::Serialize;
-use twonote_core::Library;
 use typed_path::{PathType, TypedPath};
 
 use convert::Converter;
@@ -28,13 +28,13 @@ const MAX_WARNINGS: usize = 25;
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
     #[error("{0}")]
-    Library(#[from] twonote_core::Error),
+    Library(#[from] notekroft_core::Error),
     /// Nothing could be imported; the message says why for each file.
     #[error("{0}")]
     NothingImported(String),
 }
 
-/// Things OneNote pages can hold that TwoNote cannot show yet.
+/// Things OneNote pages can hold that NoteKroft cannot show yet.
 #[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Skipped {
@@ -42,7 +42,7 @@ pub struct Skipped {
     pub ink: usize,
     /// Attached files, including audio and video recordings.
     pub files: usize,
-    /// Pictures with no data or in a format TwoNote does not display.
+    /// Pictures with no data or in a format NoteKroft does not display.
     pub pictures: usize,
     /// Content of a kind the parser did not recognise.
     pub other: usize,
@@ -108,7 +108,7 @@ struct Importer<'a> {
 }
 
 impl Importer<'_> {
-    fn section(&mut self, section: &Section, group: &[&str]) -> Result<(), twonote_core::Error> {
+    fn section(&mut self, section: &Section, group: &[&str]) -> Result<(), notekroft_core::Error> {
         let pages: Vec<_> = section
             .page_series()
             .iter()
@@ -156,7 +156,7 @@ impl Importer<'_> {
         &mut self,
         entries: &'e [SectionEntry],
         group: &mut Vec<&'e str>,
-    ) -> Result<(), twonote_core::Error> {
+    ) -> Result<(), notekroft_core::Error> {
         for entry in entries {
             match entry {
                 SectionEntry::Section(section) => self.section(section, group)?,

@@ -1,4 +1,4 @@
-# TwoNote
+# NoteKroft
 
 A local-first, open source notebook app in the freeform style of OneNote:
 notebooks, colour-coded sections, pages and subpages, and a canvas where you
@@ -7,7 +7,7 @@ click anywhere and start typing.
 Built with a Rust core and a [Tauri](https://tauri.app) shell. Notes are plain
 JSON files in a folder you own. The app makes no network requests.
 
-![TwoNote](docs/screenshot.png)
+![NoteKroft](docs/screenshot.png)
 
 ## Status
 
@@ -54,20 +54,20 @@ history, sync.
 
 ## Where your notes live
 
-`Documents/TwoNote` by default. The path is shown in the status bar; click it
-to open the folder. Set `TWONOTE_LIBRARY=/some/path` to keep the library
+`Documents/NoteKroft` by default. The path is shown in the status bar; click it
+to open the folder. Set `NOTEKROFT_LIBRARY=/some/path` to keep the library
 somewhere else, such as a folder synced by Syncthing or an encrypted volume.
 
 The layout is documented in [docs/FORMAT.md](docs/FORMAT.md). It is designed
-to be readable without TwoNote.
+to be readable without NoteKroft.
 
 ## Building and running
 
 You need Rust 1.90+, Node.js 20.19+ and Tauri's system libraries. Then:
 
 ```sh
-git clone https://github.com/morningjon/twonote.git
-cd twonote
+git clone https://github.com/morningjon/notekroft.git
+cd notekroft
 npm install
 npm run tauri dev      # run the desktop app with live reload
 npm run tauri build    # produce an installable package
@@ -79,10 +79,10 @@ packages to install, packaging options and troubleshooting, are in
 
 Prefer not to build it yourself? Every push is built for macOS, Windows and
 Linux; the apps are attached to each run under the
-[Actions tab](https://github.com/morningjon/twonote/actions/workflows/build.yml)
+[Actions tab](https://github.com/morningjon/notekroft/actions/workflows/build.yml)
 (a free GitHub account is needed to download them).
 
-So far TwoNote has been run by hand on Linux only. The macOS and Windows apps
+So far NoteKroft has been run by hand on Linux only. The macOS and Windows apps
 build and package successfully but are untested in use; reports are welcome.
 
 To try the interface in a browser without building any Rust, run
@@ -122,10 +122,10 @@ What comes across:
 | Handwriting and drawings, with pen colour, thickness and highlighter | |
 
 Text in OneNote's default font (Calibri, 11 point) is imported as plain text
-in TwoNote's own default, so only deliberate font choices are kept as
+in NoteKroft's own default, so only deliberate font choices are kept as
 formatting.
 
-After an import, TwoNote tells you how many of each skipped item it found.
+After an import, NoteKroft tells you how many of each skipped item it found.
 The first time you open an imported page, overlapping note containers are
 moved apart once, since the same text takes up slightly different room here.
 
@@ -136,8 +136,8 @@ old, so if a file of yours fails or comes out wrong, please open an issue.
 There is also a command-line importer, useful for scripting or bulk moves:
 
 ```sh
-cargo run -p twonote-onenote --example import -- \
-  ~/Documents/TwoNote "From OneNote" path/to/Notebook/*.one
+cargo run -p notekroft-onenote --example import -- \
+  ~/Documents/NoteKroft "From OneNote" path/to/Notebook/*.one
 ```
 
 ## Shortcuts
@@ -176,24 +176,24 @@ On macOS use Cmd in place of Ctrl.
 
 | Path | What it is |
 | --- | --- |
-| `crates/twonote-core` | Model, on-disk format, HTML sanitising, search. No UI, no network. |
-| `crates/twonote-onenote` | Imports OneNote `.one` and `.onetoc2` files into a library. |
+| `crates/notekroft-core` | Model, on-disk format, HTML sanitising, search. No UI, no network. |
+| `crates/notekroft-onenote` | Imports OneNote `.one` and `.onetoc2` files into a library. |
 | `src-tauri` | The desktop shell: a window and a thin command layer over the core. |
 | `ui` | The interface, in plain TypeScript with no framework. |
 | `tests/ui.mjs` | End-to-end test of the interface in headless Chromium. |
-| `docs/BUILDING.md` | How to build, package and test TwoNote. |
+| `docs/BUILDING.md` | How to build, package and test NoteKroft. |
 | `docs/FORMAT.md` | The notebook file format. |
 
 ## Tests
 
 ```sh
-cargo test -p twonote-core            # storage, sanitising, search
+cargo test -p notekroft-core            # storage, sanitising, search
 npm run build && npm run test:ui      # interface, in headless Chromium
 ```
 
 ## Security model
 
-- The web view talks to Rust only through TwoNote's own commands. Those take
+- The web view talks to Rust only through NoteKroft's own commands. Those take
   ids, never file paths, and the core rejects any id that is not a plain
   identifier, so the interface cannot read or write outside the library.
 - Note content is a fixed subset of HTML. It is sanitised in Rust (with
@@ -218,9 +218,9 @@ npm run build && npm run test:ui      # interface, in headless Chromium
 
 ## How this was built
 
-TwoNote is an independent, from-scratch implementation. It contains no
+NoteKroft is an independent, from-scratch implementation. It contains no
 Microsoft code and was not derived from OneNote's binaries. Familiar
-behaviour was reproduced from how the application visibly works. TwoNote is
+behaviour was reproduced from how the application visibly works. NoteKroft is
 not affiliated with or endorsed by Microsoft; OneNote is a trademark of
 Microsoft Corporation.
 
@@ -230,19 +230,19 @@ Microsoft's published [MS-ONE] and [MS-ONESTORE] file format specifications.
 
 ## Licence
 
-Copyright (C) 2026 morningjon and the TwoNote contributors.
+Copyright (C) 2026 morningjon and the NoteKroft contributors.
 
-TwoNote is free software: you can redistribute it and/or modify it under the
+NoteKroft is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
 version.
 
-TwoNote is distributed in the hope that it will be useful, but WITHOUT ANY
+NoteKroft is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 The full text is in [LICENSE](LICENSE). In short: you are free to use, study,
-change and share TwoNote, and anything you distribute that is built from it
+change and share NoteKroft, and anything you distribute that is built from it
 must be offered under the same terms, with its source code.
 
 [MS-ONE]: https://learn.microsoft.com/openspecs/office_file_formats/ms-one/

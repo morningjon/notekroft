@@ -2215,6 +2215,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "notekroft"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "notekroft-core",
+ "notekroft-onenote",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+]
+
+[[package]]
+name = "notekroft-core"
+version = "0.1.0"
+dependencies = [
+ "ammonia",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "notekroft-onenote"
+version = "0.1.0"
+dependencies = [
+ "notekroft-core",
+ "onenote_parser",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "typed-path",
+]
+
+[[package]]
 name = "num-conv"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4234,46 +4274,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "twonote"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "twonote-core",
- "twonote-onenote",
-]
-
-[[package]]
-name = "twonote-core"
-version = "0.1.0"
-dependencies = [
- "ammonia",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "twonote-onenote"
-version = "0.1.0"
-dependencies = [
- "onenote_parser",
- "serde",
- "tempfile",
- "thiserror 2.0.21",
- "twonote-core",
- "typed-path",
-]
 
 [[package]]
 name = "typed-path"

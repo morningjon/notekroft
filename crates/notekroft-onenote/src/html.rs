@@ -1,10 +1,10 @@
 //! A small intermediate form for imported note content, and its rendering to
-//! the HTML subset TwoNote stores.
+//! the HTML subset NoteKroft stores.
 //!
 //! Keeping this separate from the OneNote parser means the rules for what an
 //! imported note looks like can be tested without any `.one` files.
 
-use twonote_core::html::normalise_style;
+use notekroft_core::html::normalise_style;
 
 /// A stretch of text with one set of character formatting.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -63,7 +63,7 @@ impl Tag {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node {
     /// One paragraph. `todo` is `Some(done)` for a to-do item; `note_tag` is
-    /// one of TwoNote's `tag-*` classes; `align` is a `text-align` value.
+    /// one of NoteKroft's `tag-*` classes; `align` is a `text-align` value.
     Para {
         tag: Tag,
         todo: Option<bool>,
@@ -151,7 +151,7 @@ fn render_runs(runs: &[Run], out: &mut String) {
             if let Some(href) = link {
                 out.push_str("<a href=\"");
                 escape_attr(href, out);
-                // Written the way TwoNote's sanitiser stores links.
+                // Written the way NoteKroft's sanitiser stores links.
                 out.push_str("\" rel=\"noopener noreferrer\">");
             }
             open_link = link;
@@ -196,7 +196,7 @@ fn render_runs(runs: &[Run], out: &mut String) {
 }
 
 /// The run's character formatting as a canonical `style` value, exactly as
-/// TwoNote's sanitiser would write it.
+/// NoteKroft's sanitiser would write it.
 fn run_style(run: &Run) -> Option<String> {
     let mut raw = String::new();
     // A font name is data from the file: anything that is not plainly a name
@@ -410,7 +410,7 @@ pub fn is_blank(nodes: &[Node]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use twonote_core::html::clean;
+    use notekroft_core::html::clean;
 
     fn p(tag: Tag, runs: Vec<Run>) -> Node {
         Node::Para {
@@ -436,7 +436,7 @@ mod tests {
         }
     }
 
-    /// Whatever the importer produces must already be in TwoNote's stored
+    /// Whatever the importer produces must already be in NoteKroft's stored
     /// form: sanitising it again changes nothing.
     fn stable(nodes: &[Node]) -> String {
         let html = render(nodes);

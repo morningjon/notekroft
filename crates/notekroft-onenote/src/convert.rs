@@ -1,7 +1,8 @@
-//! Turns parsed OneNote pages into TwoNote pages.
+//! Turns parsed OneNote pages into NoteKroft pages.
 
 use std::io::Read;
 
+use notekroft_core::{new_id, Block, Library, NewPage, Stroke};
 use onenote_parser::contents::{
     Content, EmbeddedFile, EmbeddedObject, Image, Ink, NoteTag, Outline, OutlineElement,
     OutlineItem, RichText, Table,
@@ -9,12 +10,11 @@ use onenote_parser::contents::{
 use onenote_parser::page::{Page, PageContent};
 use onenote_parser::property::common::ColorRef;
 use onenote_parser::property::rich_text::ParagraphAlignment;
-use twonote_core::{new_id, Block, Library, NewPage, Stroke};
 
 use crate::html::{self, Node, Run, Tag};
 use crate::Skipped;
 
-/// OneNote measures layout in half inches; TwoNote in CSS pixels (96 per inch).
+/// OneNote measures layout in half inches; NoteKroft in CSS pixels (96 per inch).
 const PX_PER_HALF_INCH: f64 = 48.0;
 const DEFAULT_OUTLINE_WIDTH: f64 = 520.0;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
@@ -22,7 +22,7 @@ const MAX_IMAGE_WIDTH: f64 = 1200.0;
 const MAX_ALT_CHARS: usize = 300;
 /// Ink coordinates are in HIMETRIC units, 2540 to the inch.
 const HIMETRIC_PER_PX: f32 = 2540.0 / 96.0;
-/// OneNote's default body text, which imports as TwoNote's own default
+/// OneNote's default body text, which imports as NoteKroft's own default
 /// rather than as explicit formatting on every paragraph.
 const DEFAULT_FONT: &str = "Calibri";
 const DEFAULT_SIZE_PT: f32 = 11.0;
@@ -84,7 +84,7 @@ fn text_colour(color: Option<ColorRef>) -> Option<String> {
         .map(|(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
 }
 
-/// Map a OneNote tag onto one of TwoNote's, going by its icon and, for the
+/// Map a OneNote tag onto one of NoteKroft's, going by its icon and, for the
 /// icon-less highlight tags, its name. Tick-box tags are handled separately.
 fn note_tag_class(tag: &NoteTag) -> Option<&'static str> {
     let definition = tag.definition()?;
@@ -168,7 +168,7 @@ fn collect_strokes(ink: &Ink, out: &mut Vec<Stroke>) {
     }
 }
 
-/// A drawing as a TwoNote ink block, with its position on the page.
+/// A drawing as a NoteKroft ink block, with its position on the page.
 fn ink_block(ink: &Ink) -> Option<(f64, f64, Block)> {
     let mut strokes = Vec::new();
     collect_strokes(ink, &mut strokes);
@@ -395,7 +395,7 @@ impl Converter<'_> {
     }
 
     /// Store an image in the notebook. `None` means it could not be kept:
-    /// no data, too large, or a format TwoNote does not display (OneNote
+    /// no data, too large, or a format NoteKroft does not display (OneNote
     /// also stores EMF, BMP and TIFF).
     fn picture(&mut self, image: &Image) -> Option<Picture> {
         let stored = (|| {

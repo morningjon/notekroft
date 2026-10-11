@@ -70,7 +70,7 @@ const currentSection = (): Section | null =>
 
 // ---- remembering where you were ---------------------------------------------
 
-const LAST_KEY = 'twonote.last';
+const LAST_KEY = 'notekroft.last';
 
 function remember() {
   try {
@@ -155,7 +155,7 @@ el.imageFile.addEventListener('change', () => {
 
 // ---- how the page looks -------------------------------------------------------
 
-const THEME_KEY = 'twonote.theme';
+const THEME_KEY = 'notekroft.theme';
 let zoom = 1;
 
 function storedTheme(): Theme {
@@ -261,11 +261,11 @@ ribbon = new Ribbon(
     helpMenu: () => [
       { label: 'Keyboard shortcuts', onSelect: () => void tableDialog('Keyboard shortcuts', SHORTCUTS) },
       {
-        label: 'About TwoNote',
-        onSelect: () => void infoDialog('TwoNote', [
+        label: 'About NoteKroft',
+        onSelect: () => void infoDialog('NoteKroft', [
           'A local-first, open source notebook. Your notes are plain files in a folder you control.',
           'Free software under the GNU General Public License, version 3 or later.',
-          'github.com/morningjon/twonote',
+          'github.com/morningjon/notekroft',
         ]),
       },
     ],
@@ -303,7 +303,7 @@ el.title.addEventListener('keydown', (e) => {
 
 // ---- navigation: rendering --------------------------------------------------
 
-const DRAG = { section: 'application/x-twonote-section', page: 'application/x-twonote-page' } as const;
+const DRAG = { section: 'application/x-notekroft-section', page: 'application/x-notekroft-page' } as const;
 
 /** Make a list item draggable within its list. */
 function sortable(li: HTMLElement, kind: keyof typeof DRAG, id: string, onMove: (dragged: string, before: boolean) => void) {
@@ -598,10 +598,10 @@ async function importOneNote() {
   const left = [
     s.ink && `${count(s.ink, 'piece')} of handwriting written in line with text`,
     s.files && count(s.files, 'attached file'),
-    s.pictures && `${count(s.pictures, 'picture')} in a format TwoNote cannot display`,
+    s.pictures && `${count(s.pictures, 'picture')} in a format NoteKroft cannot display`,
     s.other && count(s.other, 'other item'),
   ].filter(Boolean);
-  if (left.length) lines.push(`Left out, because TwoNote cannot show them yet: ${left.join(', ')}.`);
+  if (left.length) lines.push(`Left out, because NoteKroft cannot show them yet: ${left.join(', ')}.`);
   if (summary.warnings.length) {
     lines.push('Notes from the import:', ...summary.warnings.slice(0, 6));
     if (summary.warnings.length > 6) lines.push(`…and ${summary.warnings.length - 6} more.`);
@@ -889,7 +889,7 @@ const WELCOME = [
 async function firstRun(): Promise<string> {
   const nb = await backend.createNotebook('My Notebook');
   const sec = await backend.createSection(nb.id, 'Quick Notes');
-  const page = await backend.createPage(nb.id, sec.id, 'Welcome to TwoNote');
+  const page = await backend.createPage(nb.id, sec.id, 'Welcome to NoteKroft');
   await backend.savePage(nb.id, sec.id, {
     ...page,
     blocks: [{ kind: 'text', id: crypto.randomUUID(), x: 0, y: 0, w: 520, html: WELCOME }],

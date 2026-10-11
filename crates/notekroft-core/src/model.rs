@@ -81,7 +81,7 @@ pub struct NewPage {
     pub blocks: Vec<Block>,
 }
 
-/// True for names of the form `<sha256 hex>.<ext>` that TwoNote stores
+/// True for names of the form `<sha256 hex>.<ext>` that NoteKroft stores
 /// pictures under. Nothing else is ever accepted as an asset reference.
 pub fn is_asset_name(name: &str) -> bool {
     name.split_once('.').is_some_and(|(stem, ext)| {

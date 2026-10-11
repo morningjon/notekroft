@@ -1,4 +1,4 @@
-// Types shared with twonote-core, and the two backends behind them:
+// Types shared with notekroft-core, and the two backends behind them:
 // the desktop app (Rust, real files) and a browser-only demo store.
 
 export interface PageEntry {
@@ -240,7 +240,7 @@ interface DemoData {
   assets: Record<string, string>;
 }
 
-const DEMO_KEY = 'twonote.demo.v1';
+const DEMO_KEY = 'notekroft.demo.v1';
 const uid = () => crypto.randomUUID();
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 

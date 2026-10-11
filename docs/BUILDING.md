@@ -1,6 +1,6 @@
-# Building TwoNote from source
+# Building NoteKroft from source
 
-This guide takes you from a fresh machine to a running copy of TwoNote, and
+This guide takes you from a fresh machine to a running copy of NoteKroft, and
 then to an installable package.
 
 - [What has been tested](#what-has-been-tested)
@@ -134,8 +134,8 @@ meet the minimums above.
 ## 2. Get the source
 
 ```sh
-git clone https://github.com/morningjon/twonote.git
-cd twonote
+git clone https://github.com/morningjon/notekroft.git
+cd notekroft
 npm install
 ```
 
@@ -149,7 +149,7 @@ npm run tauri dev
 ```
 
 The first run compiles a few hundred Rust crates and takes several minutes.
-Later runs start in seconds. A TwoNote window opens, and changes you make to
+Later runs start in seconds. A NoteKroft window opens, and changes you make to
 the source reload automatically: interface changes instantly, Rust changes
 after a short recompile.
 
@@ -180,9 +180,9 @@ minutes. Everything lands under `target/release/`:
 
 | Platform | Output |
 | --- | --- |
-| Any | The bare executable: `target/release/twonote` (`twonote.exe` on Windows) |
+| Any | The bare executable: `target/release/notekroft` (`notekroft.exe` on Windows) |
 | Linux | `bundle/deb/*.deb`, `bundle/rpm/*.rpm`, `bundle/appimage/*.AppImage` |
-| macOS | `bundle/macos/TwoNote.app`, `bundle/dmg/*.dmg` |
+| macOS | `bundle/macos/NoteKroft.app`, `bundle/dmg/*.dmg` |
 | Windows | `bundle/msi/*.msi`, `bundle/nsis/*-setup.exe` |
 
 You can only build packages for the operating system you are running.
@@ -198,41 +198,41 @@ npm run tauri build -- --bundles deb,rpm     # several
 ```
 
 On Arch-based systems the simplest route is `--no-bundle` and running
-`target/release/twonote` directly, or `--bundles appimage`.
+`target/release/notekroft` directly, or `--bundles appimage`.
 
 ### Installing what you built
 
 ```sh
 # Debian, Ubuntu and relatives
-sudo apt install ./target/release/bundle/deb/TwoNote_0.1.0_amd64.deb
+sudo apt install ./target/release/bundle/deb/NoteKroft_0.1.0_amd64.deb
 
 # Fedora and relatives
-sudo dnf install ./target/release/bundle/rpm/TwoNote-0.1.0-1.x86_64.rpm
+sudo dnf install ./target/release/bundle/rpm/NoteKroft-0.1.0-1.x86_64.rpm
 
 # Any Linux, no install needed
-chmod +x target/release/bundle/appimage/TwoNote_0.1.0_amd64.AppImage
-./target/release/bundle/appimage/TwoNote_0.1.0_amd64.AppImage
+chmod +x target/release/bundle/appimage/NoteKroft_0.1.0_amd64.AppImage
+./target/release/bundle/appimage/NoteKroft_0.1.0_amd64.AppImage
 ```
 
-On macOS, open the `.dmg` and drag TwoNote to Applications. On Windows, run
+On macOS, open the `.dmg` and drag NoteKroft to Applications. On Windows, run
 the installer. Builds you make yourself are not code-signed, so macOS and
 Windows will warn you the first time you open them.
 
 ## 5. Run the tests
 
 ```sh
-cargo test --workspace --exclude twonote   # storage, sanitising, search, import rules
+cargo test --workspace --exclude notekroft   # storage, sanitising, search, import rules
 npm run build && npm run test:ui           # the interface, in headless Chromium
 ```
 
 The OneNote importer has a further test that runs it over real `.one` files.
-TwoNote does not ship any, so it borrows the parser project's collection and
+NoteKroft does not ship any, so it borrows the parser project's collection and
 is skipped unless you point it at one:
 
 ```sh
 git clone https://github.com/msiemens/onenote.rs /tmp/onenote.rs
-TWONOTE_ONE_SAMPLES=/tmp/onenote.rs/crates/parser/tests/samples \
-  cargo test -p twonote-onenote --test samples -- --nocapture
+NOTEKROFT_ONE_SAMPLES=/tmp/onenote.rs/crates/parser/tests/samples \
+  cargo test -p notekroft-onenote --test samples -- --nocapture
 ```
 
 The interface test uses [Playwright](https://playwright.dev). If it reports
@@ -250,24 +250,24 @@ cargo clippy --workspace --all-targets
 
 ### Keep notes somewhere else
 
-By default notes live in `Documents/TwoNote`. Set `TWONOTE_LIBRARY` to use a
+By default notes live in `Documents/NoteKroft`. Set `NOTEKROFT_LIBRARY` to use a
 different folder. This is the safe way to experiment without touching your
 real notes:
 
 ```sh
-TWONOTE_LIBRARY=/tmp/twonote-test npm run tauri dev
+NOTEKROFT_LIBRARY=/tmp/notekroft-test npm run tauri dev
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:TWONOTE_LIBRARY = "C:\Temp\twonote-test"; npm run tauri dev
+$env:NOTEKROFT_LIBRARY = "C:\Temp\notekroft-test"; npm run tauri dev
 ```
 
 ### Using the Rust core on its own
 
-`crates/twonote-core` has no dependency on Tauri or the interface. It builds
-and tests on its own with `cargo build -p twonote-core`, which needs only a
+`crates/notekroft-core` has no dependency on Tauri or the interface. It builds
+and tests on its own with `cargo build -p notekroft-core`, which needs only a
 Rust toolchain and none of the system libraries above.
 
 ## Troubleshooting

@@ -170,21 +170,21 @@
 }
 
 :root {
-  --bg: #f4f6f6;
+  --bg: #f6f5f9;
   --surface: #ffffff;
-  --nav: #eef1f1;
-  --nav-deep: #e4e9e8;
-  --text: #1b2423;
-  --muted: #62706e;
-  --border: #d8dfde;
-  --border-strong: #b4c0be;
-  --accent: #0e6f6a;
-  --accent-soft: #d8eeec;
+  --nav: #f0eef4;
+  --nav-deep: #e6e3ec;
+  --text: #211d29;
+  --muted: #6a6478;
+  --border: #dedae6;
+  --border-strong: #bcb6c9;
+  --accent: #6a3fb5;
+  --accent-soft: #ebe3f8;
   --accent-text: #ffffff;
   --danger: #b3261e;
   --mark: #ffe866;
-  --mark-text: #1b2423;
-  --shadow: 0 8px 28px rgba(16, 32, 30, 0.18);
+  --mark-text: #211d29;
+  --shadow: 0 8px 28px rgba(28, 18, 44, 0.18);
   --ink-filter: none;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', sans-serif;
   color-scheme: light dark;
@@ -194,17 +194,17 @@
    light, and whenever the user chose dark. The two blocks must match. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #151919;
-    --surface: #1d2222;
-    --nav: #191e1e;
-    --nav-deep: #141818;
-    --text: #e5ecea;
-    --muted: #94a2a0;
-    --border: #2d3635;
-    --border-strong: #46524f;
-    --accent: #54c5ba;
-    --accent-soft: #1d3d3a;
-    --accent-text: #0c1a19;
+    --bg: #17151c;
+    --surface: #1f1c26;
+    --nav: #1b1922;
+    --nav-deep: #141219;
+    --text: #eae7f0;
+    --muted: #a09aaf;
+    --border: #322e3c;
+    --border-strong: #4d475a;
+    --accent: #b79cf0;
+    --accent-soft: #34284f;
+    --accent-text: #170f26;
     --danger: #f2877f;
     --mark: #7a6600;
     --mark-text: #fff7c2;
@@ -216,17 +216,17 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #151919;
-  --surface: #1d2222;
-  --nav: #191e1e;
-  --nav-deep: #141818;
-  --text: #e5ecea;
-  --muted: #94a2a0;
-  --border: #2d3635;
-  --border-strong: #46524f;
-  --accent: #54c5ba;
-  --accent-soft: #1d3d3a;
-  --accent-text: #0c1a19;
+  --bg: #17151c;
+  --surface: #1f1c26;
+  --nav: #1b1922;
+  --nav-deep: #141219;
+  --text: #eae7f0;
+  --muted: #a09aaf;
+  --border: #322e3c;
+  --border-strong: #4d475a;
+  --accent: #b79cf0;
+  --accent-soft: #34284f;
+  --accent-text: #170f26;
   --danger: #f2877f;
   --mark: #7a6600;
   --mark-text: #fff7c2;
@@ -1050,7 +1050,7 @@ button:disabled {
 
 .content .tag-source,
 .pv-tag-source {
-  --tag: #62706e;
+  --tag: #6a6478;
   --tag-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.5h5l3 3v10H4zM9 1.5v3h3M6 8.5h4M6 11h4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
@@ -1060,7 +1060,7 @@ button:disabled {
 .content .tag-definition {
   padding-left: 4px;
   border-radius: 2px;
-  color: #1b2423;
+  color: #211d29;
 }
 
 .content .tag-remember::before,
@@ -1086,7 +1086,7 @@ button:disabled {
 .pv-tag-definition {
   padding: 0 4px;
   border-radius: 2px;
-  color: #1b2423;
+  color: #211d29;
 }
 
 .content .todo {
@@ -1282,16 +1282,16 @@ button:disabled {
    text and ink. */
 .editor.tinted {
   --surface: #ffffff;
-  --nav: #eef1f1;
-  --text: #1b2423;
-  --muted: #62706e;
-  --border: #d8dfde;
-  --border-strong: #b4c0be;
-  --accent: #0e6f6a;
-  --accent-soft: #d8eeec;
+  --nav: #f0eef4;
+  --text: #211d29;
+  --muted: #6a6478;
+  --border: #dedae6;
+  --border-strong: #bcb6c9;
+  --accent: #6a3fb5;
+  --accent-soft: #ebe3f8;
   --accent-text: #ffffff;
   --mark: #ffe866;
-  --mark-text: #1b2423;
+  --mark-text: #211d29;
   --ink-filter: none;
   color: var(--text);
 }
@@ -1590,7 +1590,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(10, 20, 19, 0.4);
+  background: rgba(18, 12, 28, 0.42);
 }
 
 .dialog {

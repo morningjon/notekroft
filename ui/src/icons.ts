@@ -1,4 +1,4 @@
-// TwoNote's own icon set: small line drawings on a 20-unit grid, coloured by
+// NoteKroft's own icon set: small line drawings on a 20-unit grid, coloured by
 // the surrounding text.
 
 const P = (d: string, extra = '') =>

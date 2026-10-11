@@ -1,4 +1,4 @@
-//! TwoNote core: the notebook model, the on-disk format, and search.
+//! NoteKroft core: the notebook model, the on-disk format, and search.
 //!
 //! This crate has no UI and makes no network calls. A library is a plain
 //! directory of JSON files and image assets (see `docs/FORMAT.md`), so notes

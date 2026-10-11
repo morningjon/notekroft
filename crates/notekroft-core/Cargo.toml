@@ -1,6 +1,6 @@
 [package]
-name = "twonote-core"
-description = "Storage, model and search for TwoNote notebooks. No UI, no network."
+name = "notekroft-core"
+description = "Storage, model and search for NoteKroft notebooks. No UI, no network."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

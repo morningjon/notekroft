@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/twonote-core", "crates/twonote-onenote", "src-tauri"]
+members = ["crates/notekroft-core", "crates/notekroft-onenote", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/morningjon/twonote"
+repository = "https://github.com/morningjon/notekroft"
 
 [profile.release]
 opt-level = "s"

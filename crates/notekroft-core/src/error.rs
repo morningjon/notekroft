@@ -12,7 +12,7 @@ pub enum Error {
     InvalidAsset(String),
     #[error("invalid request: {0}")]
     Invalid(String),
-    #[error("this notebook uses format version {0}, which is newer than this version of TwoNote understands")]
+    #[error("this notebook uses format version {0}, which is newer than this version of NoteKroft understands")]
     UnsupportedFormat(u32),
     #[error("file error: {0}")]
     Io(#[from] io::Error),

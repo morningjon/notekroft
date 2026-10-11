@@ -1,4 +1,4 @@
-//! The desktop shell: a window plus a thin command layer over `twonote-core`.
+//! The desktop shell: a window plus a thin command layer over `notekroft-core`.
 //!
 //! Every command takes ids, never paths. The core validates those ids, so the
 //! web view cannot read or write outside the notebook library.
@@ -7,12 +7,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use base64::Engine;
-use tauri::{Manager, State};
-use tauri_plugin_dialog::DialogExt;
-use twonote_core::{
+use notekroft_core::{
     Library, NotebookSummary, NotebookTree, Page, PageEntry, PageOrder, SearchHit, SectionFile,
 };
-use twonote_onenote::ImportSummary;
+use notekroft_onenote::ImportSummary;
+use tauri::{Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// One lock for the whole library: commands are read-modify-write on small
 /// JSON files, and serialising them keeps two saves from interleaving.
@@ -24,7 +24,7 @@ type Cmd<T> = Result<T, String>;
 
 fn with<T>(
     state: &State<'_, AppState>,
-    f: impl FnOnce(&Library) -> twonote_core::Result<T>,
+    f: impl FnOnce(&Library) -> notekroft_core::Result<T>,
 ) -> Cmd<T> {
     let lib = state
         .lib
@@ -215,22 +215,33 @@ async fn import_onenote(
         .lib
         .lock()
         .map_err(|_| "library lock poisoned".to_string())?;
-    twonote_onenote::import_files(&lib, &notebook, &paths)
+    notekroft_onenote::import_files(&lib, &notebook, &paths)
         .map(Some)
         .map_err(|e| e.to_string())
 }
 
-/// `TWONOTE_LIBRARY` wins; otherwise notebooks live in `Documents/TwoNote`
-/// where they are easy to find, back up and sync.
+/// Where the notebooks live. `NOTEKROFT_LIBRARY` wins; otherwise it is
+/// `Documents/NoteKroft`, where notes are easy to find, back up and sync.
+///
+/// The app was briefly called TwoNote. Anyone who used it then has notes in
+/// `Documents/TwoNote` (or set `TWONOTE_LIBRARY`); those keep working where
+/// they are rather than appearing to vanish.
 fn library_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Some(dir) = std::env::var_os("TWONOTE_LIBRARY").filter(|d| !d.is_empty()) {
-        return Ok(PathBuf::from(dir));
+    for name in ["NOTEKROFT_LIBRARY", "TWONOTE_LIBRARY"] {
+        if let Some(dir) = std::env::var_os(name).filter(|d| !d.is_empty()) {
+            return Ok(PathBuf::from(dir));
+        }
     }
     let base = app
         .path()
         .document_dir()
         .or_else(|_| app.path().app_data_dir())?;
-    Ok(base.join("TwoNote"))
+    let current = base.join("NoteKroft");
+    let former = base.join("TwoNote");
+    if !current.exists() && former.is_dir() {
+        return Ok(former);
+    }
+    Ok(current)
 }
 
 pub fn run() {
@@ -267,5 +278,5 @@ pub fn run() {
             import_onenote,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TwoNote");
+        .expect("error while running NoteKroft");
 }

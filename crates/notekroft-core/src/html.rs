@@ -135,7 +135,7 @@ const STYLE_PROPERTIES: [&str; 5] = [
     "text-align",
 ];
 
-/// Reduce a `style` attribute to TwoNote's formatting properties, with each
+/// Reduce a `style` attribute to NoteKroft's formatting properties, with each
 /// value checked and rewritten in one canonical form. Returns `None` when
 /// nothing valid is left. Anything that could load a resource or change
 /// layout (urls, positioning, sizes of boxes) never survives.
@@ -245,7 +245,7 @@ fn font_size(raw: &str) -> Option<String> {
     Some(format!("{rounded}{unit}"))
 }
 
-/// Reduce arbitrary HTML to the subset TwoNote stores.
+/// Reduce arbitrary HTML to the subset NoteKroft stores.
 pub fn clean(input: &str) -> String {
     drop_unresolvable_images(CLEANER.clean(input).to_string())
 }

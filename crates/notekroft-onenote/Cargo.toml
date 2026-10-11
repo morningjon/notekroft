@@ -1,6 +1,6 @@
 [package]
-name = "twonote-onenote"
-description = "Imports Microsoft OneNote section and notebook files into a TwoNote library."
+name = "notekroft-onenote"
+description = "Imports Microsoft OneNote section and notebook files into a NoteKroft library."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 onenote_parser = "2"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-twonote-core = { path = "../twonote-core" }
+notekroft-core = { path = "../notekroft-core" }
 typed-path = "0.12"
 
 [dev-dependencies]

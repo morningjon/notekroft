@@ -42,7 +42,7 @@ try {
 
   await step('first run creates a welcome notebook', async () => {
     await page.waitForSelector('#page:not([hidden])');
-    assert.equal(await page.inputValue('#title'), 'Welcome to TwoNote');
+    assert.equal(await page.inputValue('#title'), 'Welcome to NoteKroft');
     assert.equal(await page.textContent('#nb-title'), 'My Notebook');
     assert.equal(await page.locator('#sections li').count(), 1);
     assert.equal(await blocks('.text').count(), 1);
@@ -139,7 +139,7 @@ try {
     await page.click('#add-page');
     await page.waitForFunction(() => document.activeElement?.id === 'title');
     await page.keyboard.type('Project plan');
-    assert.deepEqual(await page.locator('#pages li').allTextContents(), ['Welcome to TwoNote', 'Project plan']);
+    assert.deepEqual(await page.locator('#pages li').allTextContents(), ['Welcome to NoteKroft', 'Project plan']);
     await page.keyboard.press('Enter');
     await page.keyboard.type('Body text about quarterly forecasts');
     await saved();
@@ -161,7 +161,7 @@ try {
     await page.reload();
     await page.waitForFunction(() => document.getElementById('title').value === 'Project plan');
     await page.locator('#pages li').first().click();
-    await page.waitForFunction(() => document.getElementById('title').value === 'Welcome to TwoNote');
+    await page.waitForFunction(() => document.getElementById('title').value === 'Welcome to NoteKroft');
     assert.equal(await blocks('.text').count(), 5);
     assert.equal(await blocks('.image').count(), 1);
     await page.waitForSelector('#canvas > .block.image img[src]');
@@ -184,14 +184,14 @@ try {
     await page.locator('#pages li.active').click({ button: 'right' });
     await page.screenshot({ path: `${OUT}04-menu.png` });
     await page.getByRole('menuitem', { name: 'Delete page' }).click();
-    await page.waitForFunction(() => document.getElementById('title').value === 'Welcome to TwoNote');
+    await page.waitForFunction(() => document.getElementById('title').value === 'Welcome to NoteKroft');
     assert.equal(await page.locator('#pages li').count(), 1);
   });
 
   await step('imported pages: inline pictures show, overlapping blocks are moved apart once', async () => {
     // Plant a page shaped like the OneNote importer's output.
     const pageId = await page.evaluate(() => {
-      const data = JSON.parse(localStorage.getItem('twonote.demo.v1'));
+      const data = JSON.parse(localStorage.getItem('notekroft.demo.v1'));
       const nb = Object.values(data.notebooks)[0];
       const asset = Object.keys(data.assets)[0];
       const id = crypto.randomUUID();
@@ -205,7 +205,7 @@ try {
         ],
       };
       nb.sections[0].pages.push({ id, title: 'Imported page', level: 0, modified: 1 });
-      localStorage.setItem('twonote.demo.v1', JSON.stringify(data));
+      localStorage.setItem('notekroft.demo.v1', JSON.stringify(data));
       return id;
     });
     await page.reload();
@@ -223,7 +223,7 @@ try {
     const img = page.locator('#canvas img[data-asset]');
     assert.equal(await img.evaluate((e) => e.offsetWidth), 120);
 
-    const stored = await page.evaluate((id) => Object.values(JSON.parse(localStorage.getItem('twonote.demo.v1')).notebooks)[0].pages[id], pageId);
+    const stored = await page.evaluate((id) => Object.values(JSON.parse(localStorage.getItem('notekroft.demo.v1')).notebooks)[0].pages[id], pageId);
     assert.equal(stored.reflow, false, 'the reflow happens once');
     assert.equal(stored.blocks.find((x) => x.id === 'b').y, b.top);
     assert.match(stored.blocks[0].html, /<img data-asset="[0-9a-f]{64}\.png" width="120" height="80" alt="dot">/);
@@ -242,7 +242,7 @@ try {
     await page.locator('.menu .menu-label', { hasText: new RegExp(`^${escaped}$`) }).click();
   };
   const storedPage = (title) => page.evaluate((t) => {
-    const nb = Object.values(JSON.parse(localStorage.getItem('twonote.demo.v1')).notebooks)[0];
+    const nb = Object.values(JSON.parse(localStorage.getItem('notekroft.demo.v1')).notebooks)[0];
     return Object.values(nb.pages).find((p) => p.title === t);
   }, title);
   const newPage = async (title) => {
@@ -424,9 +424,9 @@ try {
 
     await pick('Light or dark', 'Dark');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
-    assert.equal(await page.locator('.topbar').evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(29, 34, 34)');
+    assert.equal(await page.locator('.topbar').evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(31, 28, 38)');
     // A coloured page stays a light page with dark text.
-    assert.equal(await page.locator('#canvas .content').first().evaluate((e) => getComputedStyle(e).color), 'rgb(27, 36, 35)');
+    assert.equal(await page.locator('#canvas .content').first().evaluate((e) => getComputedStyle(e).color), 'rgb(33, 29, 41)');
     await page.reload();
     await page.waitForSelector('#page:not([hidden])');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', 'the theme is remembered');

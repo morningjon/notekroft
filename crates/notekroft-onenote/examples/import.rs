@@ -1,18 +1,18 @@
 //! Import OneNote files from the command line.
 //!
 //! ```sh
-//! cargo run -p twonote-onenote --example import -- <library dir> <notebook title> <file.one | file.onetoc2>...
+//! cargo run -p notekroft-onenote --example import -- <library dir> <notebook title> <file.one | file.onetoc2>...
 //! ```
 //!
 //! Creates the notebook in the library and imports every given file into it.
-//! Point `TWONOTE_LIBRARY` at the same directory to look at the result in the
+//! Point `NOTEKROFT_LIBRARY` at the same directory to look at the result in the
 //! app.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use twonote_core::Library;
-use twonote_onenote::import_files;
+use notekroft_core::Library;
+use notekroft_onenote::import_files;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -1,5 +1,5 @@
 [package]
-name = "twonote"
+name = "notekroft"
 description = "A local-first, open source notebook app"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-name = "twonote_lib"
+name = "notekroft_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
@@ -20,5 +20,5 @@ serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-twonote-core = { path = "../crates/twonote-core" }
-twonote-onenote = { path = "../crates/twonote-onenote" }
+notekroft-core = { path = "../crates/notekroft-core" }
+notekroft-onenote = { path = "../crates/notekroft-onenote" }

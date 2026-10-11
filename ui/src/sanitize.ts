@@ -1,4 +1,4 @@
-// Reduce arbitrary HTML (pasted content, loaded pages) to the subset TwoNote
+// Reduce arbitrary HTML (pasted content, loaded pages) to the subset NoteKroft
 // stores. The Rust core applies the same rules again before anything touches
 // disk and when pages are read back; this copy keeps the live DOM clean and
 // makes pasting behave predictably. The two must stay in step.
@@ -96,7 +96,7 @@ function fontSize(raw: string): string | null {
   return `${Math.round(n * 100) / 100}${m[2]}`;
 }
 
-/** Reduce a `style` value to TwoNote's formatting properties in canonical
+/** Reduce a `style` value to NoteKroft's formatting properties in canonical
  *  form, or null when nothing valid is left. */
 export function normaliseStyle(value: string): string | null {
   const kept = new Map<string, string>();

@@ -181,6 +181,7 @@ On macOS use Cmd in place of Ctrl.
 | `src-tauri` | The desktop shell: a window and a thin command layer over the core. |
 | `ui` | The interface, in plain TypeScript with no framework. |
 | `tests/ui.mjs` | End-to-end test of the interface in headless Chromium. |
+| `CHANGELOG.md` | What changed in each version. |
 | `docs/BUILDING.md` | How to build, package and test NoteKroft. |
 | `docs/FORMAT.md` | The notebook file format. |
 

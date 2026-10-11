@@ -14,6 +14,8 @@ import { Ribbon } from './ribbon';
 import { buildTabs, type Theme } from './tabs';
 import { closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, tableDialog, toast, type MenuItem } from './widgets';
 
+declare const __APP_VERSION__: string;
+
 const backend = createBackend();
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -262,7 +264,7 @@ ribbon = new Ribbon(
       { label: 'Keyboard shortcuts', onSelect: () => void tableDialog('Keyboard shortcuts', SHORTCUTS) },
       {
         label: 'About NoteKroft',
-        onSelect: () => void infoDialog('NoteKroft', [
+        onSelect: () => void infoDialog(`NoteKroft ${__APP_VERSION__}`, [
           'A local-first, open source notebook. Your notes are plain files in a folder you control.',
           'Free software under the GNU General Public License, version 3 or later.',
           'github.com/morningjon/notekroft',

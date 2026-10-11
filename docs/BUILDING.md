@@ -204,14 +204,14 @@ On Arch-based systems the simplest route is `--no-bundle` and running
 
 ```sh
 # Debian, Ubuntu and relatives
-sudo apt install ./target/release/bundle/deb/NoteKroft_0.1.0_amd64.deb
+sudo apt install ./target/release/bundle/deb/NoteKroft_*_amd64.deb
 
 # Fedora and relatives
-sudo dnf install ./target/release/bundle/rpm/NoteKroft-0.1.0-1.x86_64.rpm
+sudo dnf install ./target/release/bundle/rpm/NoteKroft-*.x86_64.rpm
 
 # Any Linux, no install needed
-chmod +x target/release/bundle/appimage/NoteKroft_0.1.0_amd64.AppImage
-./target/release/bundle/appimage/NoteKroft_0.1.0_amd64.AppImage
+chmod +x target/release/bundle/appimage/NoteKroft_*_amd64.AppImage
+./target/release/bundle/appimage/NoteKroft_*_amd64.AppImage
 ```
 
 On macOS, open the `.dmg` and drag NoteKroft to Applications. On Windows, run

@@ -43,6 +43,13 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
+      - name: Check the version is the same everywhere
+        run: |
+          cargo_version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          npm_version=$(node -p "require('./package.json').version")
+          echo "Cargo.toml: $cargo_version, package.json: $npm_version"
+          test "$cargo_version" = "$npm_version"
+          grep -q "^## $cargo_version " CHANGELOG.md
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Lint

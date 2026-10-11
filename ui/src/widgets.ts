@@ -194,6 +194,43 @@ export function infoDialog(title: string, lines: string[]): Promise<void> {
   }, undefined);
 }
 
+export interface Choice<K extends string> {
+  key: K;
+  label: string;
+  /** A line under the label saying what the choice does. */
+  detail?: string;
+}
+
+/** A dialog offering several named actions. Resolves to the chosen key, or
+ *  null if it is closed without choosing. `path` is shown as selectable text. */
+export function choiceDialog<K extends string>(
+  title: string,
+  intro: string,
+  path: string,
+  choices: Choice<K>[],
+): Promise<K | null> {
+  return dialog<K | null>((box, done) => {
+    box.classList.add('wide');
+    box.append(h('h2', 'dialog-title', title), h('p', 'dialog-detail', intro), h('div', 'dialog-path', path));
+    const list = h('div', 'dialog-choices');
+    for (const choice of choices) {
+      const b = h('button', 'choice');
+      b.type = 'button';
+      b.append(h('span', 'choice-label', choice.label));
+      if (choice.detail) b.append(h('span', 'choice-detail', choice.detail));
+      b.addEventListener('click', () => done(choice.key));
+      list.append(b);
+    }
+    const row = h('div', 'dialog-buttons');
+    const close = h('button', 'btn', 'Close');
+    close.type = 'button';
+    close.addEventListener('click', () => done(null));
+    row.append(close);
+    box.append(list, row);
+    return close;
+  }, null);
+}
+
 /** A two-column reference table with a single button. */
 export function tableDialog(title: string, rows: [string, string][]): Promise<void> {
   return dialog<void>((box, done) => {

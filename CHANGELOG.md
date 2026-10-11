@@ -14,6 +14,25 @@ Version numbers live in two places that must agree: `Cargo.toml` (which the
 app and its installers use) and `package.json` (which the interface shows in
 Help, About). The build checks they match and that this file has an entry.
 
+## 0.4.1 (2026-10-11)
+
+- Choose where your notes are kept. File, Notes folder (or a click on the
+  path at the bottom of the window) shows the current folder and offers to:
+  - **Move** your notes to another folder. Everything is copied and checked
+    before the old copy is removed, so the notes are never in neither place.
+  - **Use a different folder**, opening the notes already there or starting
+    fresh, and leaving the current folder untouched.
+  - **Show** the folder in your file manager.
+- Picking a folder that already has other files in it (Documents, a
+  cloud-sync folder) puts the notes in a `NoteKroft` folder inside it.
+- Only notebooks and the trash are moved. Other files you keep beside them
+  are left where they are.
+- If the chosen folder is missing at start-up, for example on an unplugged
+  drive, NoteKroft says so and shows the standard folder until it returns.
+  It does not create an empty library in the missing place.
+- The choice is remembered in the app's own settings, outside the notes
+  folder. The `NOTEKROFT_LIBRARY` environment variable still overrides it.
+
 ## 0.4.0 (2026-10-11)
 
 - Renamed from TwoNote to NoteKroft.

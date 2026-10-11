@@ -123,7 +123,7 @@ fn read_json<T: DeserializeOwned>(path: &Path, what: &str) -> Result<T> {
 
 /// Write via a temporary file and rename, so a crash never leaves a
 /// half-written page behind.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| Error::Invalid("path has no parent".into()))?;

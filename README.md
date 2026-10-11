@@ -59,9 +59,27 @@ history, sync.
 
 ## Where your notes live
 
-`Documents/NoteKroft` by default. The path is shown in the status bar; click it
-to open the folder. Set `NOTEKROFT_LIBRARY=/some/path` to keep the library
-somewhere else, such as a folder synced by Syncthing or an encrypted volume.
+`Documents/NoteKroft` by default. The path is shown at the bottom of the
+window.
+
+To keep them somewhere else, such as a folder synced by Syncthing or an
+encrypted volume, open **File, Notes folder** (or click the path at the
+bottom of the window):
+
+- **Move my notes to another folder** takes every notebook to the folder you
+  pick. Everything is copied and checked before the old copy is removed.
+- **Use a different folder** opens the notes in the folder you pick, or
+  starts fresh there, and leaves the current folder as it is. Use this to
+  open notes that are already somewhere, such as a synced copy from another
+  computer.
+
+If you pick a folder with other things in it, your notes go into a
+`NoteKroft` folder inside it. If the folder you chose is missing when the app
+starts (an unplugged drive, say), NoteKroft tells you and shows the default
+folder until it is back.
+
+For scripts and testing, the `NOTEKROFT_LIBRARY` environment variable
+overrides the folder for that run.
 
 The layout is documented in [docs/FORMAT.md](docs/FORMAT.md). It is designed
 to be readable without NoteKroft.

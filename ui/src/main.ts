@@ -12,7 +12,7 @@ import {
 import { Editor } from './editor';
 import { Ribbon } from './ribbon';
 import { buildTabs, type Theme } from './tabs';
-import { closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, tableDialog, toast, type MenuItem } from './widgets';
+import { choiceDialog, closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, tableDialog, toast, type MenuItem } from './widgets';
 
 declare const __APP_VERSION__: string;
 
@@ -221,6 +221,74 @@ function notebookActions(): MenuItem[] {
   return items;
 }
 
+const megabytes = (bytes: number) =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+/** Show where notes are kept, and offer to move them or use another folder. */
+async function notesFolder() {
+  const info = await backend.libraryInfo();
+  if (info.locked) {
+    await infoDialog('Notes folder', [
+      'Your notes are kept in:',
+      info.path,
+      'This folder is set by the NOTEKROFT_LIBRARY environment variable, so it cannot be changed from here. Remove the variable and restart NoteKroft to choose a folder in the app.',
+    ]);
+    return;
+  }
+  const choice = await choiceDialog('Notes folder', 'Your notes are kept in:', info.path, [
+    {
+      key: 'move',
+      label: 'Move my notes to another folder…',
+      detail: 'Takes every notebook to a folder you pick and uses that folder from now on.',
+    },
+    {
+      key: 'use',
+      label: 'Use a different folder…',
+      detail: 'Opens the notes in a folder you pick, or starts fresh there. The notes here stay where they are.',
+    },
+    { key: 'show', label: 'Show this folder', detail: 'Opens it in your file manager.' },
+  ]);
+  if (choice === 'show') {
+    await backend.revealLibrary();
+    return;
+  }
+  if (!choice) return;
+
+  await flush();
+  await saving;
+  el.saveState.textContent = choice === 'move' ? 'Moving notes…' : 'Opening folder…';
+  let change;
+  try {
+    change = await backend.chooseLibrary(choice);
+  } finally {
+    el.saveState.textContent = '';
+  }
+  if (!change) return;
+
+  const lines: string[] = [];
+  if (change.moved) {
+    lines.push(
+      `Moved ${count(change.moved.notebooks, 'notebook')} (${count(change.moved.files, 'file')}, ${megabytes(change.moved.bytes)}) to:`,
+      change.path,
+      change.oldCleared
+        ? 'Every file was copied and checked before the old copy was removed.'
+        : `The old copy could not be fully removed. It is still at ${change.oldPath} and is safe to delete yourself.`,
+    );
+  } else {
+    lines.push(
+      'Your notes are now kept in:',
+      change.path,
+      change.hadNotebooks
+        ? 'The notebooks already in that folder are now open.'
+        : 'That folder had no notebooks, so a new one has been started.',
+      `The notes in ${change.oldPath} have not been touched.`,
+    );
+  }
+  await infoDialog(change.moved ? 'Notes moved' : 'Notes folder changed', lines);
+  // Everything on screen belongs to the old folder: start again from the new one.
+  window.location.reload();
+}
+
 const SHORTCUTS: [string, string][] = [
   ['Search all notebooks', 'Ctrl+E'],
   ['New page / new section', 'Ctrl+N / Ctrl+T'],
@@ -257,7 +325,7 @@ ribbon = new Ribbon(
     fileMenu: () => [
       ...notebookActions(),
       ...(backend.desktop
-        ? (['separator', { label: 'Show the notes folder', onSelect: () => act(() => backend.revealLibrary()) }] as MenuItem[])
+        ? (['separator', { label: 'Notes folder…', onSelect: () => act(notesFolder) }] as MenuItem[])
         : []),
     ],
     helpMenu: () => [
@@ -900,11 +968,11 @@ async function firstRun(): Promise<string> {
 }
 
 async function start() {
-  const path = await backend.libraryPath();
-  el.libPath.textContent = path;
+  const library = await backend.libraryInfo();
+  el.libPath.textContent = library.path;
   if (backend.desktop) {
-    el.libPath.title = 'Show the notebook library folder';
-    el.libPath.addEventListener('click', () => act(() => backend.revealLibrary()));
+    el.libPath.title = 'Where your notes are kept. Click to show, move or change the folder.';
+    el.libPath.addEventListener('click', () => act(notesFolder));
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     // Finish any pending save before the window goes away.
     void getCurrentWindow().onCloseRequested(async () => {
@@ -923,6 +991,7 @@ async function start() {
   const target = state.notebooks.find((n) => n.id === last.nb) ?? state.notebooks[0];
   if (last.section && last.page) lastPage.set(last.section, last.page);
   await openNotebook(target.id, last.section, last.page);
+  if (library.notice) await infoDialog('Notes folder not found', library.notice.split('\n').filter(Boolean));
 }
 
 showEmpty();

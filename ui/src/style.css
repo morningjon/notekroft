@@ -1433,6 +1433,51 @@ button:disabled {
   content: none;
 }
 
+.dialog-path {
+  margin: 6px 0 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.dialog-detail {
+  overflow-wrap: anywhere;
+}
+
+.dialog-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.choice {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.choice:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice-label {
+  font-weight: 600;
+}
+
+.choice-detail {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .dialog.wide {
   width: min(560px, 100%);
 }

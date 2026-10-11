@@ -12,6 +12,9 @@ pub enum Error {
     InvalidAsset(String),
     #[error("invalid request: {0}")]
     Invalid(String),
+    /// A problem choosing or moving the notes folder, worded for the user.
+    #[error("{0}")]
+    Location(String),
     #[error("this notebook uses format version {0}, which is newer than this version of NoteKroft understands")]
     UnsupportedFormat(u32),
     #[error("file error: {0}")]

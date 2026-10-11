@@ -1,12 +1,15 @@
 //! The desktop shell: a window plus a thin command layer over `notekroft-core`.
 //!
 //! Every command takes ids, never paths. The core validates those ids, so the
-//! web view cannot read or write outside the notebook library.
+//! web view cannot read or write outside the notebook library. Where a path
+//! is needed (importing a file, choosing the notes folder) the picker opens
+//! here on the Rust side and the person at the keyboard chooses it.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use base64::Engine;
+use notekroft_core::location::{self, Settings, Source, Tally};
 use notekroft_core::{
     Library, NotebookSummary, NotebookTree, Page, PageEntry, PageOrder, SearchHit, SectionFile,
 };
@@ -18,6 +21,14 @@ use tauri_plugin_dialog::DialogExt;
 /// JSON files, and serialising them keeps two saves from interleaving.
 struct AppState {
     lib: Mutex<Library>,
+    /// Where the user's choice of notes folder is remembered.
+    settings_file: PathBuf,
+    /// The standard notes folder, used when nothing else is chosen.
+    default_dir: PathBuf,
+    /// True when an environment variable fixes the folder for this run.
+    locked: bool,
+    /// Something to tell the user once about how the folder was chosen.
+    notice: Mutex<Option<String>>,
 }
 
 type Cmd<T> = Result<T, String>;
@@ -33,9 +44,128 @@ fn with<T>(
     f(&lib).map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryInfo {
+    path: String,
+    default_path: String,
+    /// The folder is fixed by an environment variable and cannot be changed here.
+    locked: bool,
+    notice: Option<String>,
+}
+
 #[tauri::command]
-async fn library_path(state: State<'_, AppState>) -> Cmd<String> {
-    with(&state, |l| Ok(l.root().display().to_string()))
+async fn library_info(state: State<'_, AppState>) -> Cmd<LibraryInfo> {
+    let notice = state.notice.lock().ok().and_then(|mut n| n.take());
+    with(&state, |l| {
+        Ok(LibraryInfo {
+            path: l.root().display().to_string(),
+            default_path: state.default_dir.display().to_string(),
+            locked: state.locked,
+            notice,
+        })
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryChange {
+    path: String,
+    old_path: String,
+    /// Set when notes were moved: how much went across.
+    moved: Option<Tally>,
+    /// After a move, whether the old folder was fully cleared.
+    old_cleared: bool,
+    /// When switching folders, whether the new one already held notebooks.
+    had_notebooks: bool,
+}
+
+/// Change where notes are kept. `mode` is `"move"` to take the current notes
+/// along, or `"use"` to simply open a different folder and leave the current
+/// one as it is. Returns `None` if the folder picker is cancelled.
+///
+/// A move copies everything, checks the copy, switches over, and only then
+/// clears the old folder, so there is no moment at which the notes exist in
+/// neither place.
+#[tauri::command]
+async fn choose_library(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    mode: String,
+) -> Cmd<Option<LibraryChange>> {
+    if state.locked {
+        return Err(
+            "The notes folder is set by the NOTEKROFT_LIBRARY environment variable, so it cannot be changed from here."
+                .into(),
+        );
+    }
+    let moving = match mode.as_str() {
+        "move" => true,
+        "use" => false,
+        _ => return Err("unknown mode".into()),
+    };
+    let title = if moving {
+        "Move notes to this folder"
+    } else {
+        "Keep notes in this folder"
+    };
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .blocking_pick_folder()
+        .and_then(|folder| folder.into_path().ok())
+    else {
+        return Ok(None);
+    };
+
+    let fail = |e: notekroft_core::Error| e.to_string();
+    let target = location::target_for(&picked).map_err(fail)?;
+    let mut lib = state
+        .lib
+        .lock()
+        .map_err(|_| "library lock poisoned".to_string())?;
+    let old = lib.root().to_path_buf();
+    let same =
+        std::fs::canonicalize(&target).ok() == std::fs::canonicalize(&old).ok() && target.exists();
+    if same {
+        return Err("Your notes are already in that folder.".into());
+    }
+
+    let had_notebooks = location::looks_like_library(&target);
+    let moved = if moving {
+        Some(location::copy_library(&old, &target).map_err(fail)?)
+    } else {
+        None
+    };
+    let opened = Library::open(&target).map_err(fail).and_then(|new| {
+        Settings {
+            library: Some(target.clone()),
+        }
+        .save(&state.settings_file)
+        .map_err(fail)
+        .map(|()| new)
+    });
+    let new = match opened {
+        Ok(new) => new,
+        Err(err) => {
+            // Could not switch over: take the copy away again so the old
+            // folder remains the one and only home of the notes.
+            if moving {
+                location::remove_moved(&target);
+            }
+            return Err(err);
+        }
+    };
+    *lib = new;
+    let old_cleared = moving && location::remove_moved(&old);
+    Ok(Some(LibraryChange {
+        path: target.display().to_string(),
+        old_path: old.display().to_string(),
+        moved,
+        old_cleared,
+        had_notebooks,
+    }))
 }
 
 #[tauri::command]
@@ -220,23 +350,25 @@ async fn import_onenote(
         .map_err(|e| e.to_string())
 }
 
-/// Where the notebooks live. `NOTEKROFT_LIBRARY` wins; otherwise it is
-/// `Documents/NoteKroft`, where notes are easy to find, back up and sync.
-///
-/// The app was briefly called TwoNote. Anyone who used it then has notes in
-/// `Documents/TwoNote` (or set `TWONOTE_LIBRARY`); those keep working where
-/// they are rather than appearing to vanish.
-fn library_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    for name in ["NOTEKROFT_LIBRARY", "TWONOTE_LIBRARY"] {
-        if let Some(dir) = std::env::var_os(name).filter(|d| !d.is_empty()) {
-            return Ok(PathBuf::from(dir));
-        }
-    }
+/// The folder forced by an environment variable, if any. The app was briefly
+/// called TwoNote, so the old variable name still works.
+fn environment_dir() -> Option<PathBuf> {
+    ["NOTEKROFT_LIBRARY", "TWONOTE_LIBRARY"]
+        .into_iter()
+        .find_map(|name| std::env::var_os(name).filter(|d| !d.is_empty()))
+        .map(PathBuf::from)
+}
+
+/// The standard notes folder: `Documents/NoteKroft`, where notes are easy to
+/// find, back up and sync. Anyone who used the app as TwoNote has notes in
+/// `Documents/TwoNote`; those keep working where they are rather than
+/// appearing to vanish.
+fn default_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let base = app
         .path()
         .document_dir()
         .or_else(|_| app.path().app_data_dir())?;
-    let current = base.join("NoteKroft");
+    let current = base.join(location::FOLDER_NAME);
     let former = base.join("TwoNote");
     if !current.exists() && former.is_dir() {
         return Ok(former);
@@ -249,14 +381,26 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let lib = Library::open(library_dir(app)?)?;
+            let settings_file = app.path().app_config_dir()?.join("settings.json");
+            let default_dir = default_dir(app)?;
+            let resolved = location::resolve(
+                environment_dir(),
+                &Settings::load(&settings_file),
+                default_dir.clone(),
+            );
+            let lib = Library::open(&resolved.path)?;
             app.manage(AppState {
                 lib: Mutex::new(lib),
+                settings_file,
+                default_dir,
+                locked: resolved.source == Source::Environment,
+                notice: Mutex::new(resolved.notice),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            library_path,
+            library_info,
+            choose_library,
             list_notebooks,
             create_notebook,
             get_notebook,

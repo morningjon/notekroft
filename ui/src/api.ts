@@ -112,10 +112,30 @@ export interface PageOrder {
   level: number;
 }
 
+export interface LibraryInfo {
+  path: string;
+  defaultPath: string;
+  /** Fixed by an environment variable; cannot be changed in the app. */
+  locked: boolean;
+  /** Something to tell the user once, such as a notes folder gone missing. */
+  notice: string | null;
+}
+
+export interface LibraryChange {
+  path: string;
+  oldPath: string;
+  moved: { notebooks: number; files: number; bytes: number } | null;
+  oldCleared: boolean;
+  hadNotebooks: boolean;
+}
+
 export interface Backend {
   /** True for the desktop app, false for the in-browser demo. */
   readonly desktop: boolean;
-  libraryPath(): Promise<string>;
+  libraryInfo(): Promise<LibraryInfo>;
+  /** Let the user pick a new notes folder, moving the notes there (`move`)
+   *  or just opening it (`use`). Resolves to null if they cancel. */
+  chooseLibrary(mode: 'move' | 'use'): Promise<LibraryChange | null>;
   listNotebooks(): Promise<NotebookSummary[]>;
   createNotebook(title: string): Promise<NotebookTree>;
   getNotebook(notebook: string): Promise<NotebookTree>;
@@ -178,7 +198,8 @@ class DesktopBackend implements Backend {
     }
   }
 
-  libraryPath() { return this.call<string>('library_path'); }
+  libraryInfo() { return this.call<LibraryInfo>('library_info'); }
+  chooseLibrary(mode: 'move' | 'use') { return this.call<LibraryChange | null>('choose_library', { mode }); }
   listNotebooks() { return this.call<NotebookSummary[]>('list_notebooks'); }
   createNotebook(title: string) { return this.call<NotebookTree>('create_notebook', { title }); }
   getNotebook(notebook: string) { return this.call<NotebookTree>('get_notebook', { notebook }); }
@@ -219,7 +240,7 @@ class DesktopBackend implements Backend {
   search(query: string) { return this.call<SearchHit[]>('search', { query }); }
   importOneNote(notebook: string) { return this.call<ImportSummary | null>('import_onenote', { notebook }); }
   async openExternal(url: string) { await (await this.opener).openUrl(url); }
-  async revealLibrary() { await (await this.opener).revealItemInDir(await this.libraryPath()); }
+  async revealLibrary() { await (await this.opener).revealItemInDir((await this.libraryInfo()).path); }
 }
 
 // ---- browser demo -----------------------------------------------------------
@@ -294,7 +315,14 @@ class DemoBackend implements Backend {
     return copy({ id: nb.id, title: nb.title, color: nb.color, sections: nb.sections });
   }
 
-  async libraryPath() { return 'Browser demo: notes are kept in this browser only'; }
+  async libraryInfo(): Promise<LibraryInfo> {
+    const path = 'Browser demo: notes are kept in this browser only';
+    return { path, defaultPath: path, locked: true, notice: null };
+  }
+
+  async chooseLibrary(): Promise<LibraryChange | null> {
+    throw new Error('Choosing a notes folder needs the desktop app.');
+  }
 
   async listNotebooks() {
     return Object.values(this.data.notebooks)

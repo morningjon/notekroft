@@ -248,11 +248,11 @@ cargo clippy --workspace --all-targets
 
 ## Useful options
 
-### Keep notes somewhere else
+### Use a throwaway notes folder while developing
 
-By default notes live in `Documents/NoteKroft`. Set `NOTEKROFT_LIBRARY` to use a
-different folder. This is the safe way to experiment without touching your
-real notes:
+By default notes live in `Documents/NoteKroft`, or wherever was chosen under
+File, Notes folder. Setting `NOTEKROFT_LIBRARY` overrides both for one run,
+which is the safe way to experiment without touching your real notes:
 
 ```sh
 NOTEKROFT_LIBRARY=/tmp/notekroft-test npm run tauri dev

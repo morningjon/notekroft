@@ -6,6 +6,7 @@
 
 mod error;
 pub mod html;
+pub mod location;
 mod model;
 mod search;
 mod store;

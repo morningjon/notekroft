@@ -41,19 +41,26 @@ somewhere else, such as a folder synced by Syncthing or an encrypted volume.
 The layout is documented in [docs/FORMAT.md](docs/FORMAT.md). It is designed
 to be readable without TwoNote.
 
-## Running it
+## Building and running
 
-Requirements: Rust (stable), Node 20+, and the
-[Tauri system dependencies](https://tauri.app/start/prerequisites/) for your
-platform.
+You need Rust 1.90+, Node.js 20.19+ and Tauri's system libraries. Then:
 
 ```sh
+git clone https://github.com/morningjon/twonote.git
+cd twonote
 npm install
 npm run tauri dev      # run the desktop app with live reload
-npm run tauri build    # produce an installable bundle
+npm run tauri build    # produce an installable package
 ```
 
-To try the interface in a browser with no install beyond Node, run
+**Full instructions for Linux, macOS and Windows, including the exact
+packages to install, packaging options and troubleshooting, are in
+[docs/BUILDING.md](docs/BUILDING.md).**
+
+So far TwoNote has been built and run on Linux only. macOS and Windows should
+work but are untested; reports are welcome.
+
+To try the interface in a browser without building any Rust, run
 `npm run dev` and open http://localhost:1420. In that mode notes are kept in
 the browser's local storage only.
 
@@ -87,6 +94,7 @@ On macOS use Cmd in place of Ctrl.
 | `src-tauri` | The desktop shell: a window and a thin command layer over the core. |
 | `ui` | The interface, in plain TypeScript with no framework. |
 | `tests/ui.mjs` | End-to-end test of the interface in headless Chromium. |
+| `docs/BUILDING.md` | How to build, package and test TwoNote. |
 | `docs/FORMAT.md` | The notebook file format. |
 
 ## Tests

@@ -11,6 +11,11 @@ JSON files in a folder you own. The app makes no network requests.
 
 ## Status
 
+**Alpha.** NoteKroft is pre-release software. It has automated tests but has
+not yet had real-world use, so expect rough edges, and keep a backup of any
+notes that matter. See the [changelog](CHANGELOG.md) for what each version
+added.
+
 A usable notebook app with its own open format, a OneNote-style ribbon,
 handwriting, and OneNote import.
 

@@ -8,9 +8,11 @@ use std::sync::Mutex;
 
 use base64::Engine;
 use tauri::{Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use twonote_core::{
     Library, NotebookSummary, NotebookTree, Page, PageEntry, PageOrder, SearchHit, SectionFile,
 };
+use twonote_onenote::ImportSummary;
 
 /// One lock for the whole library: commands are read-modify-write on small
 /// JSON files, and serialising them keeps two saves from interleaving.
@@ -184,6 +186,40 @@ async fn search(state: State<'_, AppState>, query: String) -> Cmd<Vec<SearchHit>
     with(&state, |l| l.search(&query, 100))
 }
 
+/// Import OneNote files as new sections of a notebook.
+///
+/// The file picker is opened here, on the Rust side, so the web view never
+/// supplies a path: it can only ask for an import, and the person at the
+/// keyboard chooses what is read. Returns `None` if they cancel.
+#[tauri::command]
+async fn import_onenote(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    notebook: String,
+) -> Cmd<Option<ImportSummary>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import from OneNote")
+        .add_filter("OneNote sections and notebooks", &["one", "onetoc2"])
+        .blocking_pick_files();
+    let paths: Vec<PathBuf> = picked
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .collect();
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    let lib = state
+        .lib
+        .lock()
+        .map_err(|_| "library lock poisoned".to_string())?;
+    twonote_onenote::import_files(&lib, &notebook, &paths)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
 /// `TWONOTE_LIBRARY` wins; otherwise notebooks live in `Documents/TwoNote`
 /// where they are easy to find, back up and sync.
 fn library_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -199,6 +235,7 @@ fn library_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> 
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let lib = Library::open(library_dir(app)?)?;
@@ -227,6 +264,7 @@ pub fn run() {
             save_asset,
             read_asset,
             search,
+            import_onenote,
         ])
         .run(tauri::generate_context!())
         .expect("error while running TwoNote");

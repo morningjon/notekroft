@@ -150,6 +150,7 @@ export class Editor {
     content.contentEditable = 'true';
     content.spellcheck = true;
     content.innerHTML = sanitizeHtml(b.html);
+    this.hydrate(content);
     const handle = h('div', 'resize-e');
     handle.title = 'Drag to resize';
     el.append(grip, content, handle);
@@ -259,7 +260,54 @@ export class Editor {
   }
 
   private isEmpty(content: HTMLElement): boolean {
-    return (content.textContent ?? '').trim() === '' && !content.querySelector('table');
+    return (content.textContent ?? '').trim() === '' && !content.querySelector('table, img');
+  }
+
+  /** Give inline pictures something to show. Stored HTML only names the
+   *  asset; the address is filled in here and stripped again on save. */
+  private hydrate(content: HTMLElement) {
+    for (const img of Array.from(content.querySelectorAll<HTMLImageElement>('img[data-asset]'))) {
+      if (img.getAttribute('src')) continue;
+      img.draggable = false;
+      this.host.assetUrl(img.dataset.asset!).then(
+        (url) => (img.src = url),
+        () => img.classList.add('missing'),
+      );
+    }
+  }
+
+  /** Move apart any blocks that overlap, working down the page. Imported
+   *  pages keep the positions another application gave them, but the same
+   *  text takes up different room here. Resolves to true if anything moved. */
+  async reflow(): Promise<boolean> {
+    await document.fonts?.ready;
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    const gap = 12;
+    const blocks = (Array.from(this.canvas.children) as HTMLElement[])
+      .map((el) => ({ el, left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }))
+      .sort((a, b) => a.top - b.top || a.left - b.left);
+    const settled: typeof blocks = [];
+    let moved = false;
+    for (const block of blocks) {
+      for (let again = true; again; ) {
+        again = false;
+        for (const other of settled) {
+          const sideBySide = block.left >= other.left + other.width || other.left >= block.left + block.width;
+          const clear = block.top >= other.top + other.height + gap || other.top >= block.top + block.height;
+          if (!sideBySide && !clear) {
+            block.top = other.top + other.height + gap;
+            again = true;
+          }
+        }
+      }
+      if (block.top !== block.el.offsetTop) {
+        block.el.style.top = px(block.top);
+        moved = true;
+      }
+      settled.push(block);
+    }
+    this.fit();
+    return moved;
   }
 
   /** Keep the canvas comfortably larger than its contents so there is always
@@ -628,6 +676,7 @@ export class Editor {
     const html = data.getData('text/html');
     if (html) document.execCommand('insertHTML', false, sanitizeHtml(html));
     else document.execCommand('insertText', false, data.getData('text/plain'));
+    if (content) this.hydrate(content);
     this.changed();
   }
 

@@ -221,8 +221,18 @@ Windows will warn you the first time you open them.
 ## 5. Run the tests
 
 ```sh
-cargo test -p twonote-core            # storage, sanitising and search
-npm run build && npm run test:ui      # the interface, in headless Chromium
+cargo test --workspace --exclude twonote   # storage, sanitising, search, import rules
+npm run build && npm run test:ui           # the interface, in headless Chromium
+```
+
+The OneNote importer has a further test that runs it over real `.one` files.
+TwoNote does not ship any, so it borrows the parser project's collection and
+is skipped unless you point it at one:
+
+```sh
+git clone https://github.com/msiemens/onenote.rs /tmp/onenote.rs
+TWONOTE_ONE_SAMPLES=/tmp/onenote.rs/crates/parser/tests/samples \
+  cargo test -p twonote-onenote --test samples -- --nocapture
 ```
 
 The interface test uses [Playwright](https://playwright.dev). If it reports

@@ -19,6 +19,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Pinned revision of the parser project whose sample .one files the
+  # importer is tested against.
+  ONENOTE_SAMPLES_COMMIT: fa4d7a044324af3bfe68727704a9789a08b36a3c
   LINUX_DEPS: >-
     libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
     libssl-dev libayatana-appindicator3-dev librsvg2-dev
@@ -44,8 +47,19 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Core tests
-        run: cargo test -p twonote-core
+      - name: Core and importer tests
+        run: cargo test --workspace --exclude twonote
+      - name: Fetch real OneNote files to test the importer against
+        run: |
+          git init -q "$RUNNER_TEMP/onenote.rs"
+          cd "$RUNNER_TEMP/onenote.rs"
+          git remote add origin https://github.com/msiemens/onenote.rs
+          git fetch -q --depth 1 origin "$ONENOTE_SAMPLES_COMMIT"
+          git checkout -q FETCH_HEAD
+      - name: Import every sample file
+        run: cargo test -p twonote-onenote --test samples -- --nocapture
+        env:
+          TWONOTE_ONE_SAMPLES: ${{ runner.temp }}/onenote.rs/crates/parser/tests/samples
       - name: Build the interface
         run: npm run build
       - name: Interface tests
@@ -99,8 +113,8 @@ jobs:
         with:
           key: ${{ matrix.name }}
       - run: npm ci
-      - name: Core tests
-        run: cargo test -p twonote-core
+      - name: Core and importer tests
+        run: cargo test --workspace --exclude twonote
       - name: Build the app
         run: npm run tauri build -- ${{ matrix.args }}
       - name: Upload the app

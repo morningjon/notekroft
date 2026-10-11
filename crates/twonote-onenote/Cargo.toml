@@ -1,0 +1,17 @@
+[package]
+name = "twonote-onenote"
+description = "Imports Microsoft OneNote section and notebook files into a TwoNote library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+onenote_parser = "2"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+twonote-core = { path = "../twonote-core" }
+typed-path = "0.12"
+
+[dev-dependencies]
+tempfile = "3"

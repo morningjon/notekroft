@@ -39,6 +39,7 @@ static CLEANER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
         "th",
         "a",
         "span",
+        "img",
     ]
     .into_iter()
     .collect();
@@ -47,6 +48,14 @@ static CLEANER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
     attrs.insert("a", ["href"].into_iter().collect());
     attrs.insert("td", ["colspan", "rowspan"].into_iter().collect());
     attrs.insert("th", ["colspan", "rowspan"].into_iter().collect());
+    // Inline pictures never carry a `src`: they name an asset stored in the
+    // notebook, and the interface resolves that when the page is shown.
+    attrs.insert(
+        "img",
+        ["data-asset", "width", "height", "alt"]
+            .into_iter()
+            .collect(),
+    );
 
     // To-do items are ordinary blocks carrying `class="todo"` (plus `done`
     // once ticked). No other classes survive.
@@ -62,13 +71,47 @@ static CLEANER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
         .allowed_classes(classes)
         .url_schemes(["http", "https", "mailto"].into_iter().collect())
         .link_rel(Some("noopener noreferrer"))
-        .clean_content_tags(["script", "style"].into_iter().collect());
+        .clean_content_tags(["script", "style"].into_iter().collect())
+        .attribute_filter(|element, attribute, value| match (element, attribute) {
+            ("img", "data-asset") => crate::model::is_asset_name(value).then(|| value.into()),
+            ("img", "width" | "height") => {
+                let digits = !value.is_empty()
+                    && value.len() <= 5
+                    && value.bytes().all(|b| b.is_ascii_digit());
+                digits.then(|| value.into())
+            }
+            _ => Some(value.into()),
+        });
     b
 });
 
 /// Reduce arbitrary HTML to the subset TwoNote stores.
 pub fn clean(input: &str) -> String {
-    CLEANER.clean(input).to_string()
+    drop_unresolvable_images(CLEANER.clean(input).to_string())
+}
+
+/// An `<img>` that names no valid asset can never be shown, so remove it
+/// rather than leave an empty element behind. Runs on sanitiser output, where
+/// every `<` is a real tag and attribute values are quoted and escaped.
+fn drop_unresolvable_images(html: String) -> String {
+    if !html.contains("<img") {
+        return html;
+    }
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html.as_str();
+    while let Some(start) = rest.find("<img") {
+        out.push_str(&rest[..start]);
+        let end = rest[start..]
+            .find('>')
+            .map_or(rest.len(), |i| start + i + 1);
+        let tag = &rest[start..end];
+        if tag.contains(" data-asset=\"") {
+            out.push_str(tag);
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Plain text of a piece of note HTML, for search and snippets. Block
@@ -164,6 +207,24 @@ mod tests {
         assert!(out.contains(r#"<td colspan="2">c</td>"#));
         assert!(out.contains("<mark>m</mark>"));
         assert!(!out.contains("evil"));
+    }
+
+    #[test]
+    fn inline_pictures_keep_only_a_valid_asset_reference() {
+        let name = format!("{}.png", "ab".repeat(32));
+        let html = format!(
+            r#"<img data-asset="{name}" width="320" height="200" alt="chart" src="https://tracker.example/x.gif" onload="x()">"#
+        );
+        assert_eq!(
+            clean(&html),
+            format!(r#"<img data-asset="{name}" width="320" height="200" alt="chart">"#)
+        );
+        assert_eq!(
+            clean(
+                r#"a<img data-asset="../../secret.png" width="1e9" src="file:///etc/passwd">b<img alt="x">"#
+            ),
+            "ab"
+        );
     }
 
     #[test]

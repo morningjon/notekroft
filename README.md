@@ -29,8 +29,12 @@ What works today:
 - Deleting is safe: pages, sections and notebooks move to `.trash` inside the
   library instead of being destroyed
 
-Not yet built (see [Roadmap](#roadmap)): importing `.one` files, ink, undo for
-moving containers, page history, sync.
+- Import from OneNote: bring in `.one` section files or a whole notebook,
+  keeping text, formatting, lists, to-dos, tables, links, pictures, subpages
+  and original dates (see [Importing from OneNote](#importing-from-onenote))
+
+Not yet built (see [Roadmap](#roadmap)): ink, attached files, undo for moving
+containers, page history, sync.
 
 ## Where your notes live
 
@@ -69,6 +73,50 @@ To try the interface in a browser without building any Rust, run
 `npm run dev` and open http://localhost:1420. In that mode notes are kept in
 the browser's local storage only.
 
+## Importing from OneNote
+
+Open the notebook menu at the top left and choose **Import from OneNote…**,
+then pick one or more `.one` section files, or a notebook's `.onetoc2` index
+to bring in every section at once. Each OneNote section becomes a new section
+in the notebook you have open. Your OneNote files are only read, never
+changed, and nothing already in the notebook is touched.
+
+Where to find the files:
+
+- **OneNote for Windows (desktop)**: File, Export, and export a section as
+  "OneNote 2010-2016 Section (*.one)". Notebooks stored on the computer are
+  already folders of `.one` files, usually under `Documents\OneNote Notebooks`.
+- **OneDrive**: on onedrive.com, select the notebook's folder and choose
+  Download. Unzip it and pick the `.onetoc2` file inside.
+
+What comes across:
+
+| Kept | Not yet |
+| --- | --- |
+| Pages, subpages, titles, created and modified dates | Ink and handwriting |
+| Section names, colours and section groups | Attached files, audio and video (a note marks where each was) |
+| Note containers in their original positions | Pictures stored as EMF, BMP or TIFF |
+| Bold, italic, underline, strikethrough, highlight, super and subscript | Fonts, text sizes and text colours |
+| Headings, bullet and numbered lists, indentation | Tags other than to-do tick boxes |
+| To-do tick boxes, ticked or not | Equations (their text is kept, not the layout) |
+| Tables, web and email links | Links to other OneNote pages (the text is kept) |
+| PNG, JPEG, GIF and WebP pictures, inline or free-standing | Password-protected sections |
+
+After an import, TwoNote tells you how many of each skipped item it found.
+The first time you open an imported page, overlapping note containers are
+moved apart once, since the same text takes up slightly different room here.
+
+Importing has been checked against 32 real OneNote files, covering both the
+desktop OneNote format and OneDrive downloads. The format is large and
+old, so if a file of yours fails or comes out wrong, please open an issue.
+
+There is also a command-line importer, useful for scripting or bulk moves:
+
+```sh
+cargo run -p twonote-onenote --example import -- \
+  ~/Documents/TwoNote "From OneNote" path/to/Notebook/*.one
+```
+
 ## Shortcuts
 
 Shortcuts follow OneNote's where one exists.
@@ -96,6 +144,7 @@ On macOS use Cmd in place of Ctrl.
 | Path | What it is |
 | --- | --- |
 | `crates/twonote-core` | Model, on-disk format, HTML sanitising, search. No UI, no network. |
+| `crates/twonote-onenote` | Imports OneNote `.one` and `.onetoc2` files into a library. |
 | `src-tauri` | The desktop shell: a window and a thin command layer over the core. |
 | `ui` | The interface, in plain TypeScript with no framework. |
 | `tests/ui.mjs` | End-to-end test of the interface in headless Chromium. |
@@ -124,10 +173,9 @@ npm run build && npm run test:ui      # interface, in headless Chromium
 
 ## Roadmap
 
-1. Read-only import of OneNote `.one` section files, using Microsoft's
-   published [MS-ONE] and [MS-ONESTORE] specifications
-2. Undo and redo for canvas operations; page version history
-3. Ink and drawing
+1. Undo and redo for canvas operations; page version history
+2. Ink and drawing, including ink from imported OneNote pages
+3. Attached files
 4. Export to Markdown and HTML
 5. Optional end-to-end encrypted sync
 
@@ -138,6 +186,10 @@ Microsoft code and was not derived from OneNote's binaries. Familiar
 behaviour was reproduced from how the application visibly works. TwoNote is
 not affiliated with or endorsed by Microsoft; OneNote is a trademark of
 Microsoft Corporation.
+
+OneNote files are read with [onenote_parser](https://github.com/msiemens/onenote.rs)
+by Markus Siemens (MPL-2.0), itself an independent implementation of
+Microsoft's published [MS-ONE] and [MS-ONESTORE] file format specifications.
 
 ## Licence
 

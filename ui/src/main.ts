@@ -9,7 +9,7 @@ import {
   type Section,
 } from './api';
 import { Editor, type InlineCommand } from './editor';
-import { closeMenu, confirmDialog, h, promptText, showMenu, toast, type MenuItem } from './widgets';
+import { closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, toast, type MenuItem } from './widgets';
 
 const backend = createBackend();
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -411,6 +411,15 @@ async function openPage(id: string | null, focusTitle = false) {
   renderPages();
   remember();
   if (focusTitle) el.title.focus();
+  if (page.reflow) {
+    // First look at an imported page: settle its layout once and keep it.
+    await editor.reflow();
+    if (state.page?.id === page.id) {
+      state.page = { ...state.page, reflow: false };
+      dirty = true;
+      await flush();
+    }
+  }
 }
 
 // ---- actions ----------------------------------------------------------------
@@ -460,6 +469,43 @@ async function deleteNotebook() {
     renderNotebook();
     await openPage(null);
   }
+}
+
+const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+async function importOneNote() {
+  const nb = state.nb;
+  if (!nb) return;
+  await flush();
+  el.saveState.textContent = 'Importing…';
+  let summary;
+  try {
+    summary = await backend.importOneNote(nb.id);
+  } finally {
+    el.saveState.textContent = '';
+  }
+  if (!summary) return;
+
+  state.nb = await backend.getNotebook(nb.id);
+  renderNotebook();
+  await openSection(summary.sections[0]?.id ?? state.sectionId);
+
+  const lines = [
+    `Added ${count(summary.sections.length, 'section')} with ${count(summary.pages, 'page')} and ${count(summary.pictures, 'picture')} to "${nb.title}". Your OneNote files were not changed.`,
+  ];
+  const s = summary.skipped;
+  const left = [
+    s.ink && count(s.ink, 'ink drawing'),
+    s.files && count(s.files, 'attached file'),
+    s.pictures && `${count(s.pictures, 'picture')} in a format TwoNote cannot display`,
+    s.other && count(s.other, 'other item'),
+  ].filter(Boolean);
+  if (left.length) lines.push(`Left out, because TwoNote cannot show them yet: ${left.join(', ')}.`);
+  if (summary.warnings.length) {
+    lines.push('Notes from the import:', ...summary.warnings.slice(0, 6));
+    if (summary.warnings.length > 6) lines.push(`…and ${summary.warnings.length - 6} more.`);
+  }
+  await infoDialog('Import finished', lines);
 }
 
 async function addSection() {
@@ -576,6 +622,10 @@ el.picker.addEventListener('click', () => {
   if (items.length) items.push('separator');
   items.push({ label: 'New notebook…', onSelect: () => act(addNotebook) });
   if (state.nb) {
+    items.push(
+      { label: 'Import from OneNote…', onSelect: () => act(importOneNote) },
+      'separator',
+    );
     items.push(
       { label: 'Rename this notebook…', onSelect: () => act(renameNotebook) },
       { label: 'Delete this notebook…', danger: true, onSelect: () => act(deleteNotebook) },

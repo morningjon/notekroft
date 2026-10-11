@@ -24,7 +24,7 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn new_id() -> String {
+pub fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
@@ -42,12 +42,7 @@ fn check_id(id: &str) -> Result<()> {
 
 /// Asset names are `<sha256 hex>.<ext>` and nothing else.
 fn check_asset(name: &str) -> Result<()> {
-    let ok = name.split_once('.').is_some_and(|(stem, ext)| {
-        stem.len() == 64
-            && stem.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-            && matches!(ext, "png" | "jpg" | "gif" | "webp")
-    });
-    if ok {
+    if is_asset_name(name) {
         Ok(())
     } else {
         Err(Error::InvalidAsset(name.to_string()))
@@ -333,6 +328,59 @@ impl Library {
         Ok(sec)
     }
 
+    /// Add a whole section in one go, keeping each page's original
+    /// timestamps. Used by importers. Pages are written first and the
+    /// section is only linked into the notebook once everything is on disk,
+    /// so a failure part-way leaves the notebook exactly as it was.
+    pub fn import_section(
+        &self,
+        nb: &str,
+        title: &str,
+        color: Option<&str>,
+        pages: Vec<NewPage>,
+    ) -> Result<SectionFile> {
+        let mut file = self.read_notebook_file(nb)?;
+        let color = match color {
+            Some(c) if check_color(c).is_ok() => c.to_lowercase(),
+            _ => SECTION_COLORS[file.sections.len() % SECTION_COLORS.len()].to_string(),
+        };
+        let mut sec = SectionFile {
+            id: new_id(),
+            title: title_or(title, "Imported section"),
+            color,
+            pages: Vec::with_capacity(pages.len()),
+        };
+        fs::create_dir_all(self.sec_dir(nb, &sec.id)?.join("pages"))?;
+        for new in pages {
+            let mut page = Page {
+                id: new_id(),
+                title: clean_title(&new.title),
+                created: new.created,
+                modified: new.modified,
+                reflow: true,
+                blocks: new.blocks,
+            };
+            for b in &page.blocks {
+                let (Block::Text { id, .. } | Block::Image { id, .. }) = b;
+                check_id(id)?;
+            }
+            sanitise_blocks(&mut page.blocks);
+            write_json(&self.page_file(nb, &sec.id, &page.id)?, &page)?;
+            sec.pages.push(PageEntry {
+                id: page.id,
+                title: page.title,
+                level: new.level.min(MAX_PAGE_LEVEL),
+                modified: page.modified,
+            });
+        }
+        normalise_levels(&mut sec.pages);
+        self.write_section(nb, &sec)?;
+        file.sections.push(sec.id.clone());
+        file.modified = now_ms();
+        self.write_notebook_file(&file)?;
+        Ok(sec)
+    }
+
     pub fn update_section(
         &self,
         nb: &str,
@@ -400,6 +448,7 @@ impl Library {
             title: clean_title(title),
             created: now,
             modified: now,
+            reflow: false,
             blocks: Vec::new(),
         };
         write_json(&self.page_file(nb, sec, &page.id)?, &page)?;
@@ -689,6 +738,7 @@ mod tests {
             title: "x".into(),
             created: 0,
             modified: 0,
+            reflow: false,
             blocks: vec![],
         };
         assert!(matches!(
@@ -848,6 +898,73 @@ mod tests {
                 html: "x".into()
             }]
         );
+    }
+
+    #[test]
+    fn import_section_keeps_timestamps_and_flags_reflow() {
+        let (_d, lib) = lib();
+        let nb = lib.create_notebook("A").unwrap();
+        let asset = lib.save_asset(&nb.id, PNG).unwrap();
+        let html = format!(
+            r#"<div>see <img data-asset="{asset}" width="10" height="5" src="http://x/y.png" onerror="x()"></div>"#
+        );
+        let pages = vec![
+            NewPage {
+                title: "First".into(),
+                level: 3,
+                created: 1000,
+                modified: 2000,
+                blocks: vec![text("b1", &html)],
+            },
+            NewPage {
+                title: "Child".into(),
+                level: 9,
+                created: 3000,
+                modified: 4000,
+                blocks: vec![],
+            },
+        ];
+        let sec = lib
+            .import_section(&nb.id, " Old notes ", Some("#AA00FF"), pages)
+            .unwrap();
+        assert_eq!(
+            (sec.title.as_str(), sec.color.as_str()),
+            ("Old notes", "#aa00ff")
+        );
+        assert_eq!(
+            sec.pages.iter().map(|p| p.level).collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert_eq!(lib.get_notebook(&nb.id).unwrap().sections[0].id, sec.id);
+
+        let page = lib.get_page(&nb.id, &sec.id, &sec.pages[0].id).unwrap();
+        assert_eq!(
+            (page.created, page.modified, page.reflow),
+            (1000, 2000, true)
+        );
+        let Block::Text { html, .. } = &page.blocks[0] else {
+            panic!()
+        };
+        assert_eq!(
+            html,
+            &format!(r#"<div>see <img data-asset="{asset}" width="10" height="5"></div>"#)
+        );
+
+        // Saving from the interface clears the flag for good.
+        let mut edited = page.clone();
+        edited.reflow = false;
+        lib.save_page(&nb.id, &sec.id, edited).unwrap();
+        let raw = fs::read_to_string(
+            lib.root()
+                .join(&nb.id)
+                .join("sections")
+                .join(&sec.id)
+                .join("pages")
+                .join(format!("{}.json", page.id)),
+        )
+        .unwrap();
+        assert!(!raw.contains("reflow"));
+        assert!(lib.search("see", 10).unwrap().len() == 1);
     }
 
     #[test]

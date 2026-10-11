@@ -56,7 +56,17 @@ export interface Page {
   title: string;
   created: number;
   modified: number;
+  /** Imported page whose blocks still need nudging apart; see Editor.reflow. */
+  reflow?: boolean;
   blocks: Block[];
+}
+
+export interface ImportSummary {
+  sections: { id: string; title: string; pages: number }[];
+  pages: number;
+  pictures: number;
+  skipped: { ink: number; files: number; pictures: number; other: number };
+  warnings: string[];
 }
 
 export interface SearchHit {
@@ -99,6 +109,9 @@ export interface Backend {
   /** A URL an <img> can show for a stored asset. */
   assetUrl(notebook: string, name: string): Promise<string>;
   search(query: string): Promise<SearchHit[]>;
+  /** Let the user pick OneNote files and import them as new sections.
+   *  Resolves to null if they cancel. Desktop only. */
+  importOneNote(notebook: string): Promise<ImportSummary | null>;
   openExternal(url: string): Promise<void>;
   revealLibrary(): Promise<void>;
 }
@@ -178,6 +191,7 @@ class DesktopBackend implements Backend {
     return url;
   }
   search(query: string) { return this.call<SearchHit[]>('search', { query }); }
+  importOneNote(notebook: string) { return this.call<ImportSummary | null>('import_onenote', { notebook }); }
   async openExternal(url: string) { await (await this.opener).openUrl(url); }
   async revealLibrary() { await (await this.opener).revealItemInDir(await this.libraryPath()); }
 }
@@ -438,6 +452,10 @@ class DemoBackend implements Backend {
       }
     }
     return hits.sort((a, b) => Number(b.titleMatch) - Number(a.titleMatch) || b.modified - a.modified).slice(0, 100);
+  }
+
+  async importOneNote(): Promise<ImportSummary | null> {
+    throw new Error('Importing OneNote files needs the desktop app, which can read files from your computer.');
   }
 
   async openExternal(url: string) { window.open(url, '_blank', 'noopener,noreferrer'); }

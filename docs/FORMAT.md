@@ -67,12 +67,18 @@ source of truth.
   "title": "Welcome",
   "created": 1791674888917,
   "modified": 1791674888922,
+  "reflow": true,
   "blocks": [
     { "kind": "text", "id": "…", "x": 0, "y": 0, "w": 520, "html": "<div>Hello</div>" },
     { "kind": "image", "id": "…", "x": 40, "y": 300, "w": 320, "h": 200, "asset": "<sha256>.png", "alt": "" }
   ]
 }
 ```
+
+`reflow` is optional and normally absent. Importers set it to `true` on pages
+whose block positions came from another application. The first time such a
+page is opened, TwoNote moves overlapping blocks apart and saves the page
+without the flag.
 
 Blocks sit on a freeform canvas. `x`, `y`, `w` and `h` are CSS pixels from
 the top-left corner of the canvas. A text block's height follows its content.
@@ -83,13 +89,22 @@ the top-left corner of the canvas. A text block's height follows its content.
 and inline style removed on write and on read:
 
 `p div br b strong i em u s strike mark sub sup h1 h2 h3 ul ol li blockquote
-code pre table tbody tr td th a span`
+code pre table tbody tr td th a span img`
 
 Allowed attributes:
 
 - `a`: `href` (schemes `http`, `https`, `mailto` only), plus an automatic `rel`
 - `td`, `th`: `colspan`, `rowspan`
 - `div`, `p`, `li`: `class`, limited to `todo` and `done`
+- `img`: `data-asset`, `width`, `height`, `alt`
+
+A `blockquote` is plain indentation, not a quotation.
+
+An inline picture is an `img` whose `data-asset` names a file in the
+notebook's `assets/` folder, exactly as an image block's `asset` does. It
+never has a `src`: nothing in a note can point outside the notebook, and an
+`img` without a valid `data-asset` is removed. `width` and `height` are whole
+numbers of CSS pixels.
 
 A to-do item is a `div`, `p` or `li` with `class="todo"`, and
 `class="todo done"` once ticked.

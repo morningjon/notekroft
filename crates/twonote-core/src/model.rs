@@ -56,8 +56,33 @@ pub struct Page {
     pub title: String,
     pub created: i64,
     pub modified: i64,
+    /// Set on imported pages whose block positions came from another
+    /// application. The interface nudges overlapping blocks apart the first
+    /// time such a page is opened, then clears the flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reflow: bool,
     #[serde(default)]
     pub blocks: Vec<Block>,
+}
+
+/// A page to be added by [`crate::Library::import_section`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewPage {
+    pub title: String,
+    pub level: u8,
+    pub created: i64,
+    pub modified: i64,
+    pub blocks: Vec<Block>,
+}
+
+/// True for names of the form `<sha256 hex>.<ext>` that TwoNote stores
+/// pictures under. Nothing else is ever accepted as an asset reference.
+pub fn is_asset_name(name: &str) -> bool {
+    name.split_once('.').is_some_and(|(stem, ext)| {
+        stem.len() == 64
+            && stem.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            && matches!(ext, "png" | "jpg" | "gif" | "webp")
+    })
 }
 
 /// Something placed on the freeform page canvas. Coordinates are CSS pixels
@@ -66,7 +91,7 @@ pub struct Page {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Block {
     /// A note container holding sanitised rich text (which may include
-    /// lists, tables, to-do items and links).
+    /// lists, tables, to-do items, links and inline pictures).
     Text {
         id: String,
         x: f64,

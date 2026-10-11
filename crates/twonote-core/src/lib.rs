@@ -13,4 +13,4 @@ mod store;
 pub use error::{Error, Result};
 pub use model::*;
 pub use search::SearchHit;
-pub use store::{now_ms, Library};
+pub use store::{new_id, now_ms, Library};

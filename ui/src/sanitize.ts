@@ -6,14 +6,14 @@
 const TAGS = new Set([
   'p', 'div', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'mark', 'sub', 'sup',
   'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'table', 'tbody', 'tr',
-  'td', 'th', 'a', 'span',
+  'td', 'th', 'a', 'span', 'img',
 ]);
 
 /** Removed together with everything inside them. */
 const DROP = new Set([
   'script', 'style', 'iframe', 'object', 'embed', 'template', 'noscript', 'svg', 'math',
   'head', 'title', 'meta', 'link', 'base', 'form', 'input', 'button', 'select', 'textarea',
-  'img', 'picture', 'video', 'audio', 'canvas',
+  'picture', 'video', 'audio', 'canvas',
 ]);
 
 /** Unknown block-level tags become plain divs so line structure survives. */
@@ -28,7 +28,13 @@ const ATTRS: Record<string, string[]> = {
   a: ['href'],
   td: ['colspan', 'rowspan'],
   th: ['colspan', 'rowspan'],
+  // No `src`: an inline picture names an asset stored in the notebook, and
+  // the editor resolves it. Pictures pasted from the web are never fetched.
+  img: ['data-asset', 'width', 'height', 'alt'],
 };
+
+const ASSET_NAME = /^[0-9a-f]{64}\.(png|jpg|gif|webp)$/;
+const DIMENSION = /^[0-9]{1,5}$/;
 
 const CLASS_TAGS = new Set(['div', 'p', 'li']);
 const CLASSES = new Set(['todo', 'done']);
@@ -74,6 +80,15 @@ function walk(parent: Element) {
       if (!keep.includes(attr.name)) el.removeAttribute(attr.name);
     }
     if (classes.length) el.setAttribute('class', classes.join(' '));
+    if (tag === 'img') {
+      if (!ASSET_NAME.test(el.getAttribute('data-asset') ?? '')) {
+        el.remove();
+        continue;
+      }
+      for (const dim of ['width', 'height']) {
+        if (!DIMENSION.test(el.getAttribute(dim) ?? '')) el.removeAttribute(dim);
+      }
+    }
     if (tag === 'a') {
       const href = el.getAttribute('href') ?? '';
       if (!SAFE_URL.test(href.trim())) el.removeAttribute('href');

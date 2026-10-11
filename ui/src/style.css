@@ -563,10 +563,20 @@ button:disabled {
   padding-left: 26px;
 }
 
+/* Indented content, as produced by the indent command and by imports. */
 .content blockquote {
-  padding-left: 12px;
-  border-left: 3px solid var(--border-strong);
-  color: var(--muted);
+  padding-left: 26px;
+}
+
+.content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 2px;
+  vertical-align: bottom;
+}
+
+.content img.missing {
+  outline: 1px dashed var(--border-strong);
 }
 
 .content code,

@@ -150,6 +150,21 @@ export function confirmDialog(title: string, detail: string, okLabel: string): P
   }, false);
 }
 
+/** A message with a single button. `lines` are shown as separate paragraphs. */
+export function infoDialog(title: string, lines: string[]): Promise<void> {
+  return dialog<void>((box, done) => {
+    box.append(h('h2', 'dialog-title', title));
+    for (const line of lines) box.append(h('p', 'dialog-detail', line));
+    const row = h('div', 'dialog-buttons');
+    const ok = h('button', 'btn primary', 'OK');
+    ok.type = 'button';
+    ok.addEventListener('click', () => done());
+    row.append(ok);
+    box.append(row);
+    return ok;
+  }, undefined);
+}
+
 let toastTimer = 0;
 
 export function toast(message: string) {

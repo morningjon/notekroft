@@ -189,6 +189,49 @@ try {
     assert.equal(await page.locator('#pages li').count(), 1);
   });
 
+  await step('imported pages: inline pictures show, overlapping blocks are moved apart once', async () => {
+    // Plant a page shaped like the OneNote importer's output.
+    const pageId = await page.evaluate(() => {
+      const data = JSON.parse(localStorage.getItem('twonote.demo.v1'));
+      const nb = Object.values(data.notebooks)[0];
+      const asset = Object.keys(data.assets)[0];
+      const id = crypto.randomUUID();
+      const long = '<div>' + 'A long imported paragraph that wraps over several lines. '.repeat(6) + '</div>';
+      nb.pages[id] = {
+        id, title: 'Imported page', created: 1, modified: 1, reflow: true,
+        blocks: [
+          { kind: 'text', id: 'a', x: 0, y: 0, w: 300, html: long + `<div><img data-asset="${asset}" width="120" height="80" alt="dot"></div>` },
+          { kind: 'text', id: 'b', x: 40, y: 30, w: 300, html: '<div>Second container</div><blockquote><div>indented</div></blockquote>' },
+          { kind: 'text', id: 'c', x: 500, y: 10, w: 200, html: '<div>Beside, untouched</div>' },
+        ],
+      };
+      nb.sections[0].pages.push({ id, title: 'Imported page', level: 0, modified: 1 });
+      localStorage.setItem('twonote.demo.v1', JSON.stringify(data));
+      return id;
+    });
+    await page.reload();
+    await page.waitForSelector('#page:not([hidden])');
+    await page.locator('#pages li', { hasText: 'Imported page' }).click();
+    await page.waitForSelector('#canvas img[data-asset][src]');
+    await saved();
+
+    const boxes = await blocks('.text').evaluateAll((els) => els.map((e) => ({ id: e.dataset.id, top: e.offsetTop, bottom: e.offsetTop + e.offsetHeight, left: e.offsetLeft })));
+    const [a, b, c] = ['a', 'b', 'c'].map((id) => boxes.find((x) => x.id === id));
+    assert.equal(a.top, 0);
+    assert.ok(a.bottom > 150, 'first block is tall enough to have overlapped the second');
+    assert.ok(b.top >= a.bottom, `second block moved below the first (${b.top} >= ${a.bottom})`);
+    assert.equal(c.top, 10, 'a block alongside is left where it was');
+    const img = page.locator('#canvas img[data-asset]');
+    assert.equal(await img.evaluate((e) => e.offsetWidth), 120);
+
+    const stored = await page.evaluate((id) => Object.values(JSON.parse(localStorage.getItem('twonote.demo.v1')).notebooks)[0].pages[id], pageId);
+    assert.equal(stored.reflow, false, 'the reflow happens once');
+    assert.equal(stored.blocks.find((x) => x.id === 'b').y, b.top);
+    assert.match(stored.blocks[0].html, /<img data-asset="[0-9a-f]{64}\.png" width="120" height="80" alt="dot">/);
+    assert.doesNotMatch(stored.blocks[0].html, /src=|draggable/);
+    await page.screenshot({ path: `${OUT}06-imported.png` });
+  });
+
   await step('dark theme renders', async () => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.screenshot({ path: `${OUT}05-dark.png` });

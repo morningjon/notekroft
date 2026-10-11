@@ -28,6 +28,8 @@
     "active": true,
     "targets": "all",
     "category": "Productivity",
+    "license": "GPL-3.0-or-later",
+    "copyright": "Copyright (C) 2026 morningjon and the TwoNote contributors",
     "shortDescription": "Local-first notebooks",
     "icon": [
       "icons/32x32.png",

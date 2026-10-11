@@ -128,7 +128,20 @@ Microsoft Corporation.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE).
+Copyright (C) 2026 morningjon and the TwoNote contributors.
+
+TwoNote is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+TwoNote is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+The full text is in [LICENSE](LICENSE). In short: you are free to use, study,
+change and share TwoNote, and anything you distribute that is built from it
+must be offered under the same terms, with its source code.
 
 [MS-ONE]: https://learn.microsoft.com/openspecs/office_file_formats/ms-one/
 [MS-ONESTORE]: https://learn.microsoft.com/openspecs/office_file_formats/ms-onestore/

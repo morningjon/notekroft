@@ -10,9 +10,9 @@ Versioning: each round of changes raises the last number only (0.4.1, 0.4.2,
 0.4.3, and so on), whatever its size. The first two numbers stay as they are
 until there is a deliberate decision to move them.
 
-Version numbers live in two places that must agree: `Cargo.toml` (which the
-app and its installers use) and `package.json` (which the interface shows in
-Help, About). The build checks they match and that this file has an entry.
+Version numbers live in two places that must agree: `Cargo.toml` (for the
+Rust code) and `package.json` (which the installers, the Android app and
+Help, About all read). The build checks they match and that this file has an entry.
 
 ## 0.4.2 (2026-10-11)
 

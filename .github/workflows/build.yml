@@ -50,6 +50,8 @@ jobs:
           echo "Cargo.toml: $cargo_version, package.json: $npm_version"
           test "$cargo_version" = "$npm_version"
           grep -q "^## $cargo_version " CHANGELOG.md
+          # Installers and the Android app take their version from here.
+          grep -q '"version": "../package.json"' src-tauri/tauri.conf.json
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Lint
@@ -150,7 +152,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -202,6 +204,7 @@ jobs:
           "$tools/apksigner" verify "$apk"
           rm -f out/*.idsig
           info=$("$tools/aapt2" dump badging "$apk" | sed -n 1p)
+          echo "$info" | grep -q "versionName='$version'" || { echo "::error::The APK says it is not version $version: $info"; exit 1; }
           abis=$(unzip -l "$apk" | grep -o 'lib/[^/]*/' | sort -u | tr '\n' ' ')
           size=$(du -h "$apk" | cut -f1)
           echo "::notice title=Android APK::$(basename "$apk"), $size, signed with $which. $info. Libraries: $abis"

@@ -74,9 +74,10 @@ fn every_sample_imports_into_valid_pages() {
         pages += summary.pages;
         pictures += summary.pictures;
         eprintln!(
-            "ok    {name}: {} pages, {} pictures, skipped {:?}, {} warnings",
+            "ok    {name}: {} pages, {} pictures, {} drawings, skipped {:?}, {} warnings",
             summary.pages,
             summary.pictures,
+            summary.drawings,
             summary.skipped,
             summary.warnings.len()
         );
@@ -109,6 +110,21 @@ fn every_sample_imports_into_valid_pages() {
                                 "{name}: field code leaked into page {:?}",
                                 page.title
                             );
+                        }
+                        Block::Ink { strokes, w, h, .. } => {
+                            assert!(!strokes.is_empty() && *w > 0.0 && *h > 0.0, "{name}");
+                            for stroke in strokes {
+                                assert!(!stroke.points.is_empty(), "{name}");
+                                for p in &stroke.points {
+                                    assert!(
+                                        p[0] >= -0.5
+                                            && p[1] >= -0.5
+                                            && f64::from(p[0]) <= w + 0.5
+                                            && f64::from(p[1]) <= h + 0.5,
+                                        "{name}: stroke point {p:?} outside its {w}x{h} block"
+                                    );
+                                }
+                            }
                         }
                         Block::Image { asset, w, h, .. } => {
                             assert!(*w >= 16.0 && *h >= 16.0, "{name}");

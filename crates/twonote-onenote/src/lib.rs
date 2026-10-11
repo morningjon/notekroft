@@ -38,7 +38,7 @@ pub enum ImportError {
 #[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Skipped {
-    /// Handwriting and drawings.
+    /// Handwriting written in line with text.
     pub ink: usize,
     /// Attached files, including audio and video recordings.
     pub files: usize,
@@ -62,6 +62,8 @@ pub struct ImportSummary {
     pub sections: Vec<ImportedSection>,
     pub pages: usize,
     pub pictures: usize,
+    /// Handwriting and drawings brought across.
+    pub drawings: usize,
     pub skipped: Skipped,
     /// Human-readable notes about anything that did not go smoothly.
     pub warnings: Vec<String>,
@@ -254,6 +256,7 @@ pub fn import_files(
             lib,
             notebook,
             pictures: 0,
+            drawings: 0,
             skipped: Skipped::default(),
         },
         summary: ImportSummary::default(),
@@ -287,6 +290,7 @@ pub fn import_files(
         summary.warn(format!("Not imported: {failure}"));
     }
     summary.pictures = converter.pictures;
+    summary.drawings = converter.drawings;
     summary.skipped = converter.skipped;
     Ok(summary)
 }

@@ -4,6 +4,8 @@
 //! Keeping this separate from the OneNote parser means the rules for what an
 //! imported note looks like can be tested without any `.one` files.
 
+use twonote_core::html::normalise_style;
+
 /// A stretch of text with one set of character formatting.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Run {
@@ -14,7 +16,14 @@ pub struct Run {
     pub strike: bool,
     pub superscript: bool,
     pub subscript: bool,
-    pub highlight: bool,
+    /// Font family, when it differs from the default.
+    pub font: Option<String>,
+    /// Size in points, when it differs from the default.
+    pub size: Option<f32>,
+    /// Text colour as `#rrggbb`.
+    pub color: Option<String>,
+    /// Highlight colour as `#rrggbb`.
+    pub highlight: Option<String>,
     pub link: Option<String>,
 }
 
@@ -34,15 +43,32 @@ pub enum Tag {
     H1,
     H2,
     H3,
+    H4,
+    H5,
+    H6,
     Code,
+    Quote,
+    Cite,
+}
+
+impl Tag {
+    pub fn is_heading(self) -> bool {
+        matches!(
+            self,
+            Tag::H1 | Tag::H2 | Tag::H3 | Tag::H4 | Tag::H5 | Tag::H6
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node {
-    /// One paragraph. `todo` is `Some(done)` for a to-do item.
+    /// One paragraph. `todo` is `Some(done)` for a to-do item; `note_tag` is
+    /// one of TwoNote's `tag-*` classes; `align` is a `text-align` value.
     Para {
         tag: Tag,
         todo: Option<bool>,
+        note_tag: Option<&'static str>,
+        align: Option<&'static str>,
         runs: Vec<Run>,
     },
     List {
@@ -130,9 +156,14 @@ fn render_runs(runs: &[Run], out: &mut String) {
             }
             open_link = link;
         }
+        let style = run_style(run);
+        if let Some(style) = &style {
+            out.push_str("<span style=\"");
+            escape_attr(style, out);
+            out.push_str("\">");
+        }
         // Links are already underlined; do not double up.
-        let tags: [(&str, bool); 7] = [
-            ("mark", run.highlight),
+        let tags: [(&str, bool); 6] = [
             ("b", run.bold),
             ("i", run.italic),
             ("u", run.underline && link.is_none()),
@@ -155,35 +186,96 @@ fn render_runs(runs: &[Run], out: &mut String) {
                 out.push('>');
             }
         }
+        if style.is_some() {
+            out.push_str("</span>");
+        }
     }
     if open_link.is_some() {
         out.push_str("</a>");
     }
 }
 
-fn todo_class(todo: Option<bool>) -> &'static str {
+/// The run's character formatting as a canonical `style` value, exactly as
+/// TwoNote's sanitiser would write it.
+fn run_style(run: &Run) -> Option<String> {
+    let mut raw = String::new();
+    // A font name is data from the file: anything that is not plainly a name
+    // is left out rather than passed along.
+    let plain_name = |f: &&String| {
+        f.chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+    };
+    if let Some(font) = run.font.as_ref().filter(plain_name) {
+        raw.push_str(&format!("font-family: {font};"));
+    }
+    if let Some(size) = run.size {
+        raw.push_str(&format!("font-size: {size}pt;"));
+    }
+    if let Some(color) = &run.color {
+        raw.push_str(&format!("color: {color};"));
+    }
+    if let Some(highlight) = &run.highlight {
+        raw.push_str(&format!("background-color: {highlight};"));
+    }
+    normalise_style(&raw)
+}
+
+/// ` class="…"` and ` style="…"` for a block, in the order the sanitiser
+/// writes them.
+fn block_attrs(
+    todo: Option<bool>,
+    extra: Option<&str>,
+    note_tag: Option<&str>,
+    align: Option<&str>,
+    out: &mut String,
+) {
+    let mut classes: Vec<&str> = Vec::new();
     match todo {
-        Some(true) => " class=\"todo done\"",
-        Some(false) => " class=\"todo\"",
-        None => "",
+        Some(true) => classes.extend(["todo", "done"]),
+        Some(false) => classes.push("todo"),
+        None => {}
+    }
+    classes.extend(extra);
+    classes.extend(note_tag);
+    if !classes.is_empty() {
+        out.push_str(" class=\"");
+        out.push_str(&classes.join(" "));
+        out.push('"');
+    }
+    if let Some(align) = align {
+        out.push_str(" style=\"text-align: ");
+        out.push_str(align);
+        out.push('"');
     }
 }
 
-fn render_para(tag: Tag, todo: Option<bool>, runs: &[Run], out: &mut String) {
-    let (open, close) = match tag {
-        Tag::Div | Tag::Code => ("div", "div"),
-        Tag::H1 => ("h1", "h1"),
-        Tag::H2 => ("h2", "h2"),
-        Tag::H3 => ("h3", "h3"),
+fn render_para(node: &Node, out: &mut String) {
+    let Node::Para {
+        tag,
+        todo,
+        note_tag,
+        align,
+        runs,
+    } = node
+    else {
+        return;
+    };
+    let (name, class) = match tag {
+        Tag::Div | Tag::Code => ("div", None),
+        Tag::Quote => ("div", Some("quote")),
+        Tag::Cite => ("div", Some("cite")),
+        Tag::H1 => ("h1", None),
+        Tag::H2 => ("h2", None),
+        Tag::H3 => ("h3", None),
+        Tag::H4 => ("h4", None),
+        Tag::H5 => ("h5", None),
+        Tag::H6 => ("h6", None),
     };
     out.push('<');
-    out.push_str(open);
-    // Only plain blocks may carry the to-do class in TwoNote's format.
-    if open == "div" {
-        out.push_str(todo_class(todo));
-    }
+    out.push_str(name);
+    block_attrs(*todo, class, *note_tag, *align, out);
     out.push('>');
-    if tag == Tag::Code {
+    if *tag == Tag::Code {
         out.push_str("<code>");
         render_runs(runs, out);
         out.push_str("</code>");
@@ -191,26 +283,40 @@ fn render_para(tag: Tag, todo: Option<bool>, runs: &[Run], out: &mut String) {
         render_runs(runs, out);
     }
     out.push_str("</");
-    out.push_str(close);
+    out.push_str(name);
     out.push('>');
 }
 
-/// Render nodes that sit inside a list item or table cell, where a leading
-/// plain paragraph flows inline instead of opening its own block.
-fn render_inline_first(nodes: &[Node], out: &mut String) {
-    let mut rest = nodes;
-    if let Some((
+/// A paragraph with nothing a list item or table cell could not carry
+/// itself, so its text can flow straight into that container.
+fn plain_para(node: &Node) -> Option<(&[Run], Option<bool>, Option<&'static str>)> {
+    match node {
         Node::Para {
             tag: Tag::Div,
+            todo,
+            note_tag,
+            align: None,
             runs,
-            ..
-        },
-        tail,
-    )) = nodes.split_first()
-    {
-        render_runs(runs, out);
-        rest = tail;
-    } else if nodes.is_empty() {
+        } => Some((runs, *todo, *note_tag)),
+        _ => None,
+    }
+}
+
+/// Render nodes that sit inside a list item or table cell, where a leading
+/// plain paragraph flows inline instead of opening its own block. In a table
+/// cell (`bare`) that only applies when the paragraph has no tick box or tag,
+/// since a cell cannot carry one.
+fn render_inline_first(nodes: &[Node], bare: bool, out: &mut String) {
+    let mut rest = nodes;
+    if let Some((first, tail)) = nodes.split_first() {
+        match plain_para(first) {
+            Some((runs, todo, tag)) if !bare || (todo.is_none() && tag.is_none()) => {
+                render_runs(runs, out);
+                rest = tail;
+            }
+            _ => {}
+        }
+    } else {
         out.push_str("<br>");
     }
     render_into(rest, out);
@@ -219,25 +325,21 @@ fn render_inline_first(nodes: &[Node], out: &mut String) {
 fn render_into(nodes: &[Node], out: &mut String) {
     for node in nodes {
         match node {
-            Node::Para { tag, todo, runs } => render_para(*tag, *todo, runs, out),
+            Node::Para { .. } => render_para(node, out),
             Node::List { ordered, items } => {
                 let tag = if *ordered { "ol" } else { "ul" };
                 out.push('<');
                 out.push_str(tag);
                 out.push('>');
                 for item in items {
-                    let todo = match item.first() {
-                        Some(Node::Para {
-                            tag: Tag::Div,
-                            todo,
-                            ..
-                        }) => *todo,
-                        _ => None,
-                    };
+                    let (todo, note_tag) = item
+                        .first()
+                        .and_then(plain_para)
+                        .map_or((None, None), |(_, todo, tag)| (todo, tag));
                     out.push_str("<li");
-                    out.push_str(todo_class(todo));
+                    block_attrs(todo, None, note_tag, None, out);
                     out.push('>');
-                    render_inline_first(item, out);
+                    render_inline_first(item, false, out);
                     out.push_str("</li>");
                 }
                 out.push_str("</");
@@ -257,7 +359,7 @@ fn render_into(nodes: &[Node], out: &mut String) {
                     out.push_str("<tr>");
                     for cell in row {
                         out.push_str("<td>");
-                        render_inline_first(cell, out);
+                        render_inline_first(cell, true, out);
                         out.push_str("</td>");
                     }
                     out.push_str("</tr>");
@@ -310,10 +412,26 @@ mod tests {
     use super::*;
     use twonote_core::html::clean;
 
+    fn p(tag: Tag, runs: Vec<Run>) -> Node {
+        Node::Para {
+            tag,
+            todo: None,
+            note_tag: None,
+            align: None,
+            runs,
+        }
+    }
+
     fn para(text: &str) -> Node {
+        p(Tag::Div, vec![Run::plain(text)])
+    }
+
+    fn todo(text: &str, done: bool) -> Node {
         Node::Para {
             tag: Tag::Div,
-            todo: None,
+            todo: Some(done),
+            note_tag: None,
+            align: None,
             runs: vec![Run::plain(text)],
         }
     }
@@ -338,19 +456,37 @@ mod tests {
             },
             Run {
                 text: "x\u{b}y\u{1}".into(),
-                highlight: true,
+                highlight: Some("#ffff00".into()),
                 strike: true,
                 ..Run::default()
             },
         ];
-        let html = stable(&[Node::Para {
-            tag: Tag::Div,
-            todo: None,
-            runs,
-        }]);
         assert_eq!(
-            html,
-            "<div>a &lt; b &amp; <b><i>bold</i></b><mark><s>x<br>y</s></mark></div>"
+            stable(&[p(Tag::Div, runs)]),
+            "<div>a &lt; b &amp; <b><i>bold</i></b><span style=\"background-color: #ffff00\"><s>x<br>y</s></span></div>"
+        );
+    }
+
+    #[test]
+    fn fonts_sizes_and_colours_become_canonical_styles() {
+        let run = Run {
+            text: "Title".into(),
+            font: Some("Calibri Light".into()),
+            size: Some(20.0),
+            color: Some("#C00000".into()),
+            highlight: Some("#00ff00".into()),
+            underline: true,
+            ..Run::default()
+        };
+        let half = Run {
+            text: "x".into(),
+            size: Some(10.5),
+            font: Some("bad;font{}".into()),
+            ..Run::default()
+        };
+        assert_eq!(
+            stable(&[p(Tag::Div, vec![run, half])]),
+            "<div><span style=\"font-family: Calibri Light; font-size: 20pt; color: #c00000; background-color: #00ff00\"><u>Title</u></span><span style=\"font-size: 10.5pt\">x</span></div>"
         );
     }
 
@@ -363,17 +499,16 @@ mod tests {
             link: Some(target.into()),
             ..Run::default()
         };
-        let html = stable(&[Node::Para {
-            tag: Tag::Div,
-            todo: None,
-            runs: vec![
+        let html = stable(&[p(
+            Tag::Div,
+            vec![
                 link("Tw", "https://example.org/?a=1&b=2", false),
                 link("oNote", "https://example.org/?a=1&b=2", true),
                 Run::plain(" and "),
                 link("a page", "onenote:#Page&section-id={1}", false),
                 link("x", "javascript:alert(1)", false),
             ],
-        }]);
+        )]);
         assert_eq!(
             html,
             "<div><a href=\"https://example.org/?a=1&amp;b=2\" rel=\"noopener noreferrer\">Tw<b>oNote</b></a> and <u>a page</u><u>x</u></div>"
@@ -381,44 +516,60 @@ mod tests {
     }
 
     #[test]
-    fn headings_code_and_empty_paragraphs() {
-        let p = |tag| Node::Para {
-            tag,
-            todo: None,
+    fn paragraph_styles_alignment_and_tags() {
+        let t = |tag| p(tag, vec![Run::plain("T")]);
+        assert_eq!(
+            stable(&[
+                t(Tag::H1),
+                t(Tag::H4),
+                t(Tag::H6),
+                t(Tag::Code),
+                t(Tag::Quote),
+                t(Tag::Cite),
+                p(Tag::Div, vec![]),
+            ]),
+            "<h1>T</h1><h4>T</h4><h6>T</h6><div><code>T</code></div><div class=\"quote\">T</div><div class=\"cite\">T</div><div><br></div>"
+        );
+        let fancy = Node::Para {
+            tag: Tag::H2,
+            todo: Some(true),
+            note_tag: Some("tag-important"),
+            align: Some("center"),
             runs: vec![Run::plain("T")],
         };
-        let empty = Node::Para {
-            tag: Tag::Div,
-            todo: None,
-            runs: vec![],
-        };
         assert_eq!(
-            stable(&[p(Tag::H1), p(Tag::H2), p(Tag::H3), p(Tag::Code), empty]),
-            "<h1>T</h1><h2>T</h2><h3>T</h3><div><code>T</code></div><div><br></div>"
+            stable(&[fancy]),
+            "<h2 class=\"todo done tag-important\" style=\"text-align: center\">T</h2>"
         );
     }
 
     #[test]
-    fn lists_nest_and_carry_todos() {
-        let todo = |text: &str, done| Node::Para {
-            tag: Tag::Div,
-            todo: Some(done),
-            runs: vec![Run::plain(text)],
-        };
+    fn lists_nest_and_carry_todos_and_tags() {
         let nested = Node::List {
             ordered: true,
             items: vec![vec![para("one")], vec![para("two")]],
         };
+        let tagged = Node::Para {
+            tag: Tag::Div,
+            todo: None,
+            note_tag: Some("tag-question"),
+            align: None,
+            runs: vec![Run::plain("why")],
+        };
         let html = stable(&[
             Node::List {
                 ordered: false,
-                items: vec![vec![para("top"), nested], vec![todo("ticked", true)]],
+                items: vec![
+                    vec![para("top"), nested],
+                    vec![todo("ticked", true)],
+                    vec![tagged],
+                ],
             },
             todo("loose", false),
         ]);
         assert_eq!(
             html,
-            "<ul><li>top<ol><li>one</li><li>two</li></ol></li><li class=\"todo done\">ticked</li></ul><div class=\"todo\">loose</div>"
+            "<ul><li>top<ol><li>one</li><li>two</li></ol></li><li class=\"todo done\">ticked</li><li class=\"tag-question\">why</li></ul><div class=\"todo\">loose</div>"
         );
     }
 
@@ -428,7 +579,7 @@ mod tests {
         let html = stable(&[
             Node::Table(vec![
                 vec![vec![para("a")], vec![]],
-                vec![vec![para("b"), para("c")], vec![]],
+                vec![vec![para("b"), para("c")], vec![todo("in a cell", false)]],
             ]),
             Node::Indent(vec![para("child")]),
             Node::Indent(vec![]),
@@ -443,7 +594,7 @@ mod tests {
         assert_eq!(
             html,
             format!(
-                "<table><tbody><tr><td>a</td><td><br></td></tr><tr><td>b<div>c</div></td><td><br></td></tr></tbody></table>\
+                "<table><tbody><tr><td>a</td><td><br></td></tr><tr><td>b<div>c</div></td><td><div class=\"todo\">in a cell</div></td></tr></tbody></table>\
                  <blockquote><div>child</div></blockquote>\
                  <div><img data-asset=\"{asset}\" width=\"320\" height=\"200\" alt=\"a &quot;chart&quot; line\"></div>\
                  <div><i>[Attached file not imported: &lt;report&gt;.pdf]</i></div>"

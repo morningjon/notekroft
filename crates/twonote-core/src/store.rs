@@ -16,6 +16,8 @@ use crate::model::*;
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_ASSET_BYTES: usize = 25 * 1024 * 1024;
 const TRASH_DIR: &str = ".trash";
+const MAX_STROKES: usize = 5_000;
+const MAX_STROKE_POINTS: usize = 20_000;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -358,11 +360,12 @@ impl Library {
                 created: new.created,
                 modified: new.modified,
                 reflow: true,
+                rules: None,
+                color: None,
                 blocks: new.blocks,
             };
             for b in &page.blocks {
-                let (Block::Text { id, .. } | Block::Image { id, .. }) = b;
-                check_id(id)?;
+                check_id(b.id())?;
             }
             sanitise_blocks(&mut page.blocks);
             write_json(&self.page_file(nb, &sec.id, &page.id)?, &page)?;
@@ -449,6 +452,8 @@ impl Library {
             created: now,
             modified: now,
             reflow: false,
+            rules: None,
+            color: None,
             blocks: Vec::new(),
         };
         write_json(&self.page_file(nb, sec, &page.id)?, &page)?;
@@ -477,7 +482,7 @@ impl Library {
     pub fn get_page(&self, nb: &str, sec: &str, page: &str) -> Result<Page> {
         let mut p = self.read_page_file(nb, sec, page)?;
         p.id = page.to_string();
-        sanitise_blocks(&mut p.blocks);
+        sanitise_page(&mut p);
         Ok(p)
     }
 
@@ -491,10 +496,9 @@ impl Library {
             .ok_or_else(|| Error::NotFound("page".into()))?;
 
         for b in &page.blocks {
-            let (Block::Text { id, .. } | Block::Image { id, .. }) = b;
-            check_id(id)?;
+            check_id(b.id())?;
         }
-        sanitise_blocks(&mut page.blocks);
+        sanitise_page(&mut page);
         page.title = clean_title(&page.title);
         let now = now_ms();
         page.modified = now;
@@ -650,7 +654,62 @@ fn sanitise_blocks(blocks: &mut Vec<Block>) {
             *h = finite(*h, 16.0, 8000.0);
             check_asset(asset).is_ok()
         }
+        Block::Ink {
+            x,
+            y,
+            w,
+            h,
+            strokes,
+            ..
+        } => {
+            *x = finite(*x, 0.0, EDGE);
+            *y = finite(*y, 0.0, EDGE);
+            *w = finite(*w, 1.0, 20_000.0);
+            *h = finite(*h, 1.0, 20_000.0);
+            strokes.truncate(MAX_STROKES);
+            strokes.retain_mut(|s| {
+                s.points.truncate(MAX_STROKE_POINTS);
+                for p in &mut s.points {
+                    for v in p.iter_mut() {
+                        // One decimal place is finer than any screen shows.
+                        let bounded = if v.is_finite() {
+                            v.clamp(-20_000.0, 40_000.0)
+                        } else {
+                            0.0
+                        };
+                        *v = (bounded * 10.0).round() / 10.0;
+                    }
+                }
+                s.width = if s.width.is_finite() {
+                    s.width.clamp(0.5, 80.0)
+                } else {
+                    2.0
+                };
+                s.opacity = if s.opacity.is_finite() {
+                    s.opacity.clamp(0.05, 1.0)
+                } else {
+                    1.0
+                };
+                s.color = s.color.to_lowercase();
+                !s.points.is_empty() && check_color(&s.color).is_ok()
+            });
+            !strokes.is_empty()
+        }
     });
+}
+
+/// Everything a page carries besides its title and dates.
+fn sanitise_page(page: &mut Page) {
+    sanitise_blocks(&mut page.blocks);
+    page.rules = page
+        .rules
+        .take()
+        .filter(|r| matches!(r.as_str(), "ruled" | "grid"));
+    page.color = page
+        .color
+        .take()
+        .map(|c| c.to_lowercase())
+        .filter(|c| check_color(c).is_ok());
 }
 
 #[cfg(test)]
@@ -739,6 +798,8 @@ mod tests {
             created: 0,
             modified: 0,
             reflow: false,
+            rules: None,
+            color: None,
             blocks: vec![],
         };
         assert!(matches!(
@@ -965,6 +1026,73 @@ mod tests {
         .unwrap();
         assert!(!raw.contains("reflow"));
         assert!(lib.search("see", 10).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn ink_page_colour_and_rule_lines_round_trip() {
+        let (_d, lib) = lib();
+        let nb = lib.create_notebook("A").unwrap();
+        let sec = lib.create_section(&nb.id, "S").unwrap();
+        let mut page = lib.create_page(&nb.id, &sec.id, "P", None).unwrap();
+        let stroke = |points: Vec<[f32; 2]>, color: &str, width: f32, opacity: f32| Stroke {
+            points,
+            color: color.into(),
+            width,
+            opacity,
+        };
+        page.rules = Some("grid".into());
+        page.color = Some("#FFF2CC".into());
+        page.blocks = vec![
+            Block::Ink {
+                id: "ink1".into(),
+                x: 10.0,
+                y: 20.0,
+                w: 100.0,
+                h: 50.0,
+                strokes: vec![
+                    stroke(vec![[0.0, 0.0], [12.3456, f32::NAN]], "#FF0000", 2.5, 1.0),
+                    stroke(vec![[1.0, 1.0]], "#ffee00", 500.0, 0.4),
+                    stroke(vec![], "#000000", 2.0, 1.0),
+                    stroke(vec![[1.0, 1.0]], "javascript:alert(1)", 2.0, 1.0),
+                ],
+            },
+            Block::Ink {
+                id: "empty".into(),
+                x: 0.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+                strokes: vec![],
+            },
+        ];
+        lib.save_page(&nb.id, &sec.id, page.clone()).unwrap();
+        let loaded = lib.get_page(&nb.id, &sec.id, &page.id).unwrap();
+        assert_eq!(loaded.rules.as_deref(), Some("grid"));
+        assert_eq!(loaded.color.as_deref(), Some("#fff2cc"));
+        assert_eq!(
+            loaded.blocks,
+            vec![Block::Ink {
+                id: "ink1".into(),
+                x: 10.0,
+                y: 20.0,
+                w: 100.0,
+                h: 50.0,
+                strokes: vec![
+                    stroke(vec![[0.0, 0.0], [12.3, 0.0]], "#ff0000", 2.5, 1.0),
+                    stroke(vec![[1.0, 1.0]], "#ffee00", 80.0, 0.4),
+                ],
+            }]
+        );
+        // Opacity is only written when it is not the default.
+        let raw = fs::read_to_string(lib.page_file(&nb.id, &sec.id, &page.id).unwrap()).unwrap();
+        assert_eq!(raw.matches("\"opacity\"").count(), 1);
+
+        let mut odd = loaded.clone();
+        odd.rules = Some("../../etc".into());
+        odd.color = Some("url(x)".into());
+        lib.save_page(&nb.id, &sec.id, odd).unwrap();
+        let loaded = lib.get_page(&nb.id, &sec.id, &page.id).unwrap();
+        assert_eq!((loaded.rules, loaded.color), (None, None));
     }
 
     #[test]

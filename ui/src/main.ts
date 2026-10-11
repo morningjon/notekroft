@@ -5,17 +5,21 @@ import {
   type NotebookTree,
   type Page,
   type PageEntry,
+  type Rules,
   type SearchHit,
   type Section,
 } from './api';
-import { Editor, type InlineCommand } from './editor';
-import { closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, toast, type MenuItem } from './widgets';
+import { Editor } from './editor';
+import { Ribbon } from './ribbon';
+import { buildTabs, type Theme } from './tabs';
+import { closeMenu, confirmDialog, h, infoDialog, promptText, showMenu, tableDialog, toast, type MenuItem } from './widgets';
 
 const backend = createBackend();
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const el = {
-  toolbar: $('toolbar'),
+  tabs: $('tabs'),
+  ribbon: $('ribbon'),
   search: $<HTMLInputElement>('search'),
   searchBox: $('search-box'),
   results: $('search-results'),
@@ -125,9 +129,11 @@ function flush(): Promise<void> {
 
 // ---- editor -----------------------------------------------------------------
 
+let ribbon: Ribbon | null = null;
+
 const editor = new Editor(el.canvas, {
   onChange: markDirty,
-  onSelection: refreshToolbar,
+  onSelection: () => ribbon?.refresh(),
   assetUrl: (name) => backend.assetUrl(state.nb!.id, name),
   saveImage: (bytes) => backend.saveAsset(state.nb!.id, bytes),
   openLink: (url) => act(() => backend.openExternal(url)),
@@ -135,57 +141,149 @@ const editor = new Editor(el.canvas, {
   notify: toast,
 });
 
-function refreshToolbar() {
-  const fmt = editor.formatState();
-  for (const b of el.toolbar.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
-    const cmd = b.dataset.cmd as InlineCommand;
-    b.setAttribute('aria-pressed', String(!!fmt && cmd in fmt && fmt[cmd]));
-  }
-}
-
 async function askForLink() {
   const url = await promptText('Insert link', '', 'Insert', 'https://example.org');
   if (url === null || !url.trim()) return;
   if (!editor.insertLink(url)) toast('Only web (http, https) and email links can be added.');
 }
 
-// Toolbar buttons must not take focus, or the selection they act on is lost.
-el.toolbar.addEventListener('mousedown', (e) => e.preventDefault());
-el.toolbar.addEventListener('click', (e) => {
-  const b = (e.target as Element).closest<HTMLButtonElement>('button');
-  if (!b) return;
-  if (!state.page) {
-    toast('Open or add a page first.');
-    return;
-  }
-  if (b.dataset.cmd) {
-    editor.exec(b.dataset.cmd as InlineCommand);
-    return;
-  }
-  switch (b.dataset.act) {
-    case 'styles': {
-      const r = b.getBoundingClientRect();
-      showMenu(r.left, r.bottom + 4, [
-        { label: 'Heading 1', hint: 'Ctrl+Alt+1', onSelect: () => editor.heading('h1') },
-        { label: 'Heading 2', hint: 'Ctrl+Alt+2', onSelect: () => editor.heading('h2') },
-        { label: 'Heading 3', hint: 'Ctrl+Alt+3', onSelect: () => editor.heading('h3') },
-        { label: 'Normal', hint: 'Ctrl+Shift+N', onSelect: () => editor.heading('div') },
-      ]);
-      break;
-    }
-    case 'highlight': editor.highlight(); break;
-    case 'todo': editor.toggleTodo(); break;
-    case 'table': editor.insertTable(); break;
-    case 'image': el.imageFile.click(); break;
-    case 'link': act(askForLink); break;
-  }
-});
-
 el.imageFile.addEventListener('change', () => {
   const files = Array.from(el.imageFile.files ?? []);
   el.imageFile.value = '';
   if (files.length && state.page) act(() => editor.insertImages(files));
 });
+
+// ---- how the page looks -------------------------------------------------------
+
+const THEME_KEY = 'twonote.theme';
+let zoom = 1;
+
+function storedTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'light' || t === 'dark' ? t : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function setTheme(theme: Theme) {
+  if (theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    /* a convenience only */
+  }
+  ribbon?.refresh();
+}
+
+function setZoom(next: number) {
+  zoom = next;
+  el.page.style.transform = next === 1 ? '' : `scale(${next})`;
+  editor.setScale(next);
+  ribbon?.refresh();
+}
+
+/** Show the open page's rule lines and background colour. */
+function applyPageLook() {
+  const page = state.page;
+  el.canvas.classList.toggle('rules-ruled', page?.rules === 'ruled');
+  el.canvas.classList.toggle('rules-grid', page?.rules === 'grid');
+  // A coloured page is always light, so it keeps dark text in either theme.
+  el.scroller.classList.toggle('tinted', !!page?.color);
+  el.scroller.style.backgroundColor = page?.color ?? '';
+}
+
+function changePage(change: Partial<Pick<Page, 'rules' | 'color'>>) {
+  if (!state.page) return;
+  state.page = { ...state.page, ...change };
+  applyPageLook();
+  dirty = true;
+  void flush();
+  ribbon?.refresh();
+}
+
+// ---- ribbon -------------------------------------------------------------------
+
+function notebookActions(): MenuItem[] {
+  const items: MenuItem[] = [{ label: 'New notebook…', onSelect: () => act(addNotebook) }];
+  if (state.nb) {
+    items.push(
+      { label: 'Import from OneNote…', onSelect: () => act(importOneNote) },
+      'separator',
+      { label: 'Rename this notebook…', onSelect: () => act(renameNotebook) },
+      { label: 'Delete this notebook…', danger: true, onSelect: () => act(deleteNotebook) },
+    );
+  }
+  return items;
+}
+
+const SHORTCUTS: [string, string][] = [
+  ['Search all notebooks', 'Ctrl+E'],
+  ['New page / new section', 'Ctrl+N / Ctrl+T'],
+  ['Previous / next page', 'Ctrl+PageUp / Ctrl+PageDown'],
+  ['Make subpage / promote', 'Ctrl+Alt+] / Ctrl+Alt+['],
+  ['Undo / redo', 'Ctrl+Z / Ctrl+Y'],
+  ['Bold, italic, underline', 'Ctrl+B, Ctrl+I, Ctrl+U'],
+  ['Strikethrough', 'Ctrl+-'],
+  ['Subscript / superscript', 'Ctrl+= / Ctrl+Shift+='],
+  ['Highlight', 'Ctrl+Alt+H'],
+  ['Bullet list / numbered list', 'Ctrl+. / Ctrl+/'],
+  ['Increase / decrease indent', 'Alt+Shift+Right / Left'],
+  ['Align left / right', 'Ctrl+L / Ctrl+R'],
+  ['Heading 1 to 6 / normal text', 'Ctrl+Alt+1 to 6 / Ctrl+Shift+N'],
+  ['To Do, Important, Question tags', 'Ctrl+1, Ctrl+2, Ctrl+3'],
+  ['Remember, Definition tags / remove tag', 'Ctrl+4, Ctrl+5 / Ctrl+0'],
+  ['Insert link', 'Ctrl+K'],
+  ['Insert date / time / both', 'Alt+Shift+D / T / F'],
+  ['Start a table, next cell, new row', 'Tab'],
+  ['Open a link', 'Ctrl+click'],
+  ['Zoom in / out', 'Ctrl+Alt+= / Ctrl+Alt+-'],
+  ['Stop drawing, back to typing', 'Esc'],
+];
+
+ribbon = new Ribbon(
+  el.tabs,
+  el.ribbon,
+  buildTabs({
+    editor,
+    hasPage: () => !!state.page,
+    notify: toast,
+    pickImages: () => el.imageFile.click(),
+    askForLink: () => act(askForLink),
+    fileMenu: () => [
+      ...notebookActions(),
+      ...(backend.desktop
+        ? (['separator', { label: 'Show the notes folder', onSelect: () => act(() => backend.revealLibrary()) }] as MenuItem[])
+        : []),
+    ],
+    helpMenu: () => [
+      { label: 'Keyboard shortcuts', onSelect: () => void tableDialog('Keyboard shortcuts', SHORTCUTS) },
+      {
+        label: 'About TwoNote',
+        onSelect: () => void infoDialog('TwoNote', [
+          'A local-first, open source notebook. Your notes are plain files in a folder you control.',
+          'Free software under the GNU General Public License, version 3 or later.',
+          'github.com/morningjon/twonote',
+        ]),
+      },
+    ],
+    zoom: () => zoom,
+    setZoom,
+    rules: () => (state.page?.rules as Rules | null | undefined) ?? null,
+    setRules: (rules) => changePage({ rules }),
+    pageColor: () => state.page?.color ?? null,
+    setPageColor: (color) => changePage({ color }),
+    theme: storedTheme,
+    setTheme,
+  }),
+  // Leaving the Draw tab puts the pen down.
+  (tab) => {
+    if (tab !== 'draw' && editor.currentTool.kind !== 'type') editor.setTool({ kind: 'type' });
+  },
+);
+setTheme(storedTheme());
 
 el.title.addEventListener('input', () => {
   const entry = currentSection()?.pages.find((p) => p.id === state.page?.id);
@@ -392,6 +490,7 @@ async function openPage(id: string | null, focusTitle = false) {
   if (!id || !state.nb || !state.sectionId) {
     state.page = null;
     editor.load([]);
+    applyPageLook();
     renderPages();
     showEmpty();
     remember();
@@ -406,6 +505,8 @@ async function openPage(id: string | null, focusTitle = false) {
   el.empty.hidden = true;
   el.page.hidden = false;
   editor.load(page.blocks);
+  applyPageLook();
+  ribbon?.refresh();
   el.scroller.scrollTo(0, 0);
   el.saveState.textContent = '';
   renderPages();
@@ -491,11 +592,11 @@ async function importOneNote() {
   await openSection(summary.sections[0]?.id ?? state.sectionId);
 
   const lines = [
-    `Added ${count(summary.sections.length, 'section')} with ${count(summary.pages, 'page')} and ${count(summary.pictures, 'picture')} to "${nb.title}". Your OneNote files were not changed.`,
+    `Added ${count(summary.sections.length, 'section')} with ${count(summary.pages, 'page')}, ${count(summary.pictures, 'picture')} and ${count(summary.drawings, 'ink stroke')} to "${nb.title}". Your OneNote files were not changed.`,
   ];
   const s = summary.skipped;
   const left = [
-    s.ink && count(s.ink, 'ink drawing'),
+    s.ink && `${count(s.ink, 'piece')} of handwriting written in line with text`,
     s.files && count(s.files, 'attached file'),
     s.pictures && `${count(s.pictures, 'picture')} in a format TwoNote cannot display`,
     s.other && count(s.other, 'other item'),
@@ -620,18 +721,7 @@ el.picker.addEventListener('click', () => {
     },
   }));
   if (items.length) items.push('separator');
-  items.push({ label: 'New notebook…', onSelect: () => act(addNotebook) });
-  if (state.nb) {
-    items.push(
-      { label: 'Import from OneNote…', onSelect: () => act(importOneNote) },
-      'separator',
-    );
-    items.push(
-      { label: 'Rename this notebook…', onSelect: () => act(renameNotebook) },
-      { label: 'Delete this notebook…', danger: true, onSelect: () => act(deleteNotebook) },
-    );
-  }
-  showMenu(r.left, r.bottom + 4, items);
+  showMenu(r.left, r.bottom + 4, [...items, ...notebookActions()]);
 });
 
 el.addSection.addEventListener('click', () => act(addSection));
@@ -724,13 +814,37 @@ document.addEventListener('mousedown', (e) => {
 // ---- app-wide shortcuts -----------------------------------------------------
 
 document.addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || document.querySelector('.overlay')) return;
+  if (document.querySelector('.overlay')) return;
   const key = e.key.toLowerCase();
   const run = (fn: () => void) => {
     e.preventDefault();
     closeMenu();
     fn();
   };
+  const field = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && state.page && !field) {
+    const now = new Date();
+    const date = now.toLocaleDateString();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (key === 'd') run(() => editor.insertText(date));
+    else if (key === 't') run(() => editor.insertText(time));
+    else if (key === 'f') run(() => editor.insertText(`${date} ${time}`));
+    return;
+  }
+  if (!(e.ctrlKey || e.metaKey)) return;
+  // One undo history for the whole page, in place of the browser's own
+  // text-only one. Plain input fields keep theirs.
+  if (state.page && !field && !e.altKey && (key === 'z' || key === 'y')) {
+    if (key === 'y' || e.shiftKey) run(() => editor.redo());
+    else run(() => editor.undo());
+    return;
+  }
+  if (e.altKey && (e.key === '=' || e.key === '+' || e.key === '-')) {
+    const steps = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2];
+    const next = e.key === '-' ? [...steps].reverse().find((z) => z < zoom - 0.001) : steps.find((z) => z > zoom + 0.001);
+    if (next) run(() => setZoom(next));
+    return;
+  }
   if (e.altKey && (e.key === ']' || e.key === '[')) {
     const entry = currentSection()?.pages.find((p) => p.id === state.page?.id);
     if (entry) run(() => act(() => setLevel(entry.id, entry.level + (e.key === ']' ? 1 : -1))));
@@ -766,6 +880,7 @@ const WELCOME = [
   '<div class="todo done">Type some text, then press Tab to turn the line into a table</div>',
   '<div class="todo">Paste or drop a picture onto the page</div>',
   '<div class="todo">Press Ctrl+1 to tag a line as a to-do</div>',
+  '<div class="todo">Open the Draw tab to write or sketch by hand</div>',
   '<div class="todo">Press Ctrl+E to search every notebook</div>',
   '<div><br></div>',
   '<div>Your notes are ordinary files in a folder you control. Nothing leaves this computer.</div>',

@@ -55,12 +55,11 @@ try {
     assert.equal(await blocks('.text').count(), 2);
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Control+b');
-    assert.equal(await page.locator('#toolbar [data-cmd=bold]').getAttribute('aria-pressed'), 'true');
-    await page.locator('#toolbar [data-act=highlight]').click();
+    await page.waitForSelector('#ribbon button[title^="Bold"][aria-pressed="true"]');
+    await page.locator('#ribbon button[title^="Highlight"]').first().click();
     const html = await blocks('.text').nth(1).locator('.content').innerHTML();
-    assert.match(html, /<b>/);
-    assert.match(html, /<mark>/);
-    assert.doesNotMatch(html, /style=/);
+    assert.match(html, /<b/);
+    assert.match(html, /style="background-color: #ffff00"/);
     await saved();
   });
 
@@ -230,6 +229,228 @@ try {
     assert.match(stored.blocks[0].html, /<img data-asset="[0-9a-f]{64}\.png" width="120" height="80" alt="dot">/);
     assert.doesNotMatch(stored.blocks[0].html, /src=|draggable/);
     await page.screenshot({ path: `${OUT}06-imported.png` });
+  });
+
+  // ---- ribbon ------------------------------------------------------------------
+
+  const tab = (name) => page.locator(`#tabs button[data-tab="${name}"]`).click();
+  const tool = (title) => page.locator(`#ribbon button[title^="${title}"]`).first();
+  const pick = async (title, item) => {
+    const exact = page.locator(`#ribbon button[title="${title}"]`);
+    await ((await exact.count()) ? exact : tool(title)).click();
+    const escaped = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await page.locator('.menu .menu-label', { hasText: new RegExp(`^${escaped}$`) }).click();
+  };
+  const storedPage = (title) => page.evaluate((t) => {
+    const nb = Object.values(JSON.parse(localStorage.getItem('twonote.demo.v1')).notebooks)[0];
+    return Object.values(nb.pages).find((p) => p.title === t);
+  }, title);
+  const newPage = async (title) => {
+    await page.click('#add-page');
+    await page.waitForFunction(() => document.activeElement?.id === 'title');
+    await page.keyboard.type(title);
+    await page.keyboard.press('Enter');
+  };
+
+  await step('Home tab: font, size, colour, alignment, styles and tags', async () => {
+    await newPage('Formatting');
+    await page.keyboard.type('Styled text');
+    await page.keyboard.press('Control+a');
+    await pick('Font size', '20');
+    await pick('Font', 'Georgia');
+    await tool('Font colour').click();
+    await pick('Paragraph alignment', 'Centre');
+    assert.equal(await tool('Font size').textContent(), '20▾');
+    assert.equal(await tool('Font').first().textContent(), 'Georgia▾');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await pick('Paragraph style', 'Heading 2');
+    await page.keyboard.type('A heading');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Star this');
+    await page.keyboard.press('Control+2');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Quoted');
+    await pick('Paragraph style', 'Quote');
+    await saved();
+
+    const html = (await storedPage('Formatting')).blocks[0].html;
+    assert.match(html, /font-family: Georgia/);
+    assert.match(html, /font-size: 20pt/);
+    assert.match(html, /color: #c00000/);
+    assert.match(html, /text-align: center/);
+    assert.match(html, /<h2[^>]*>(<span[^>]*>)?A heading/);
+    assert.match(html, /<div class="tag-important">(<span[^>]*>)?Star this</);
+    assert.match(html, /<div class="quote">(<span[^>]*>)?Quoted</, 'a tag does not follow onto the next line');
+    assert.doesNotMatch(html, /<font|rgb\(/, 'stored formatting is in canonical form');
+    const star = page.locator('#canvas .tag-important');
+    assert.notEqual(await star.evaluate((e) => getComputedStyle(e, '::before').maskImage || getComputedStyle(e, '::before').webkitMaskImage), 'none');
+    await page.screenshot({ path: `${OUT}07-formatting.png` });
+  });
+
+  await step('undo and redo cover typing and moving, in one history', async () => {
+    await newPage('Undo');
+    await page.keyboard.type('First');
+    await page.waitForTimeout(700);
+    await page.keyboard.type(' second');
+    await page.waitForTimeout(700);
+    const text = () => page.locator('#canvas .content').first().textContent();
+    assert.equal(await text(), 'First second');
+    await page.keyboard.press('Control+z');
+    assert.equal(await text(), 'First');
+    await page.keyboard.press('Control+y');
+    assert.equal(await text(), 'First second');
+
+    const block = blocks('.text').first();
+    await block.hover();
+    const grip = await block.locator('.grip').boundingBox();
+    const before = await block.boundingBox();
+    await page.mouse.move(grip.x + 30, grip.y + 5);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 230, grip.y + 105, { steps: 4 });
+    await page.mouse.up();
+    assert.equal(Math.round((await block.boundingBox()).x - before.x), 200);
+    await tool('Undo').click();
+    assert.equal(Math.round((await blocks('.text').first().boundingBox()).x - before.x), 0);
+    await page.waitForSelector('#ribbon button[title^="Redo"]:not(:disabled)');
+    await tool('Redo').click();
+    assert.equal(Math.round((await blocks('.text').first().boundingBox()).x - before.x), 200);
+    await page.waitForSelector('#ribbon button[title^="Redo"]:disabled');
+  });
+
+  await step('Insert tab: table by grid, date, line and symbol', async () => {
+    await newPage('Inserts');
+    await tab('insert');
+    await tool('Insert a table').click();
+    await page.getByRole('button', { name: '4 by 2 table' }).click();
+    assert.equal(await page.locator('#canvas table tr').count(), 2);
+    assert.equal(await page.locator('#canvas table td').count(), 8);
+    await page.keyboard.type('in a cell');
+    await clickCanvas(40, 260);
+    await tool("Insert today's date").click();
+    await tool('Insert a symbol').click();
+    await page.getByRole('button', { name: '€', exact: true }).click();
+    await tool('Insert a horizontal line').click();
+    await saved();
+    const stored = await storedPage('Inserts');
+    assert.match(stored.blocks[0].html, /<td>in a cell<\/td>/);
+    assert.match(stored.blocks[1].html, new RegExp(`${new Date().getFullYear()}.*€.*<hr>`, 's'));
+  });
+
+  await step('Draw tab: pens, grouping, shapes, eraser, selecting ink', async () => {
+    await newPage('Drawing');
+    await page.locator('#title').click();
+    await tab('draw');
+    await tool('Black pen').click();
+    const canvas = await page.locator('#canvas').boundingBox();
+    const stroke = async (points) => {
+      await page.mouse.move(canvas.x + points[0][0], canvas.y + points[0][1]);
+      await page.mouse.down();
+      for (const [x, y] of points.slice(1)) await page.mouse.move(canvas.x + x, canvas.y + y, { steps: 6 });
+      await page.mouse.up();
+    };
+    await stroke([[100, 100], [160, 60], [220, 110]]);
+    await stroke([[100, 140], [220, 150]]);
+    assert.equal(await blocks('.ink').count(), 1, 'strokes drawn in quick succession join one drawing');
+    assert.equal(await blocks('.ink').locator('g').count(), 2);
+
+    await page.waitForTimeout(1700);
+    await tool('Yellow highlighter').click();
+    await stroke([[300, 100], [460, 104]]);
+    assert.equal(await blocks('.ink').count(), 2);
+    const marker = blocks('.ink').nth(1).locator('path.line');
+    assert.equal(await marker.getAttribute('stroke'), '#ffe600');
+    assert.equal(await marker.getAttribute('stroke-opacity'), '0.4');
+
+    await pick('Draw a shape', 'Rectangle');
+    await stroke([[100, 220], [260, 300]]);
+    assert.equal(await blocks('.ink').count(), 3);
+    const rect = await blocks('.ink').nth(2).locator('path.line').getAttribute('d');
+    assert.equal(rect.split('L').length, 5, 'a rectangle keeps its four straight sides');
+    assert.equal(await blocks('.text').count(), 0, 'drawing never starts a note container');
+
+    await tool('Erase strokes').click();
+    await stroke([[160, 130], [160, 160]]);
+    assert.equal(await blocks('.ink').first().locator('g').count(), 1, 'the eraser removes the stroke it crosses');
+
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#canvas').evaluate((e) => e.className), 'canvas');
+    await saved();
+    const stored = await storedPage('Drawing');
+    assert.deepEqual(stored.blocks.map((b) => [b.kind, b.strokes.length]), [['ink', 1], ['ink', 1], ['ink', 1]]);
+    assert.ok(stored.blocks[0].strokes[0].points.length > 5);
+    await page.screenshot({ path: `${OUT}08-drawing.png` });
+
+    // In typing mode a stroke can be clicked to select its drawing, then deleted.
+    await page.mouse.click(canvas.x + 380, canvas.y + 102);
+    await page.waitForSelector('#canvas .block.ink.selected');
+    await page.keyboard.press('Delete');
+    assert.equal(await blocks('.ink').count(), 2);
+    await tool('Undo').click().catch(() => {});
+    await tab('home');
+    await tool('Undo').click();
+    assert.equal(await blocks('.ink').count(), 3, 'deleting ink can be undone');
+    // Empty space inside a drawing's bounds still starts a note.
+    await clickCanvas(180, 260);
+    await page.keyboard.type('inside the box');
+    assert.equal(await blocks('.text').count(), 1);
+    await saved();
+  });
+
+  await step('View tab: zoom, rule lines, page colour and theme', async () => {
+    await tab('view');
+    await pick('Zoom', '150%');
+    assert.equal(await page.locator('#page').evaluate((e) => e.style.transform), 'scale(1.5)');
+    // Clicks and drags still land where the pointer is.
+    const canvas = await page.locator('#canvas').boundingBox();
+    await page.mouse.click(canvas.x + 600, canvas.y + 90);
+    await page.keyboard.type('zoomed');
+    const placed = blocks('.text').last();
+    assert.equal(await placed.evaluate((e) => e.style.left), '390px');
+    assert.equal(await placed.evaluate((e) => e.style.top), '46px');
+    await tool('Zoom to 100%').click();
+    assert.equal(await page.locator('#page').evaluate((e) => e.style.transform), '');
+
+    await pick('Show lines', 'Grid');
+    assert.ok(await page.locator('#canvas').evaluate((e) => e.classList.contains('rules-grid')));
+    await tool("Change this page's background").click();
+    await page.locator('.menu .swatch').first().click();
+    assert.equal(await page.locator('#editor').evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(255, 249, 219)');
+    await saved();
+    const stored = await storedPage('Drawing');
+    assert.equal(stored.rules, 'grid');
+    assert.equal(stored.color, '#fff9db');
+    await page.screenshot({ path: `${OUT}09-view.png` });
+
+    await pick('Light or dark', 'Dark');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    assert.equal(await page.locator('.topbar').evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(29, 34, 34)');
+    // A coloured page stays a light page with dark text.
+    assert.equal(await page.locator('#canvas .content').first().evaluate((e) => getComputedStyle(e).color), 'rgb(27, 36, 35)');
+    await page.reload();
+    await page.waitForSelector('#page:not([hidden])');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', 'the theme is remembered');
+    assert.ok(await page.locator('#canvas').evaluate((e) => e.classList.contains('rules-grid')));
+    assert.equal(await blocks('.ink').count(), 3, 'ink survives a reload');
+    await page.screenshot({ path: `${OUT}10-dark-ink.png` });
+    await tab('view');
+    await pick('Light or dark', 'Match the system');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), undefined);
+    await tab('home');
+  });
+
+  await step('File and Help menus', async () => {
+    await page.locator('#tabs button[data-tab="file"]').click();
+    assert.deepEqual(
+      await page.locator('.menu .menu-label').allTextContents(),
+      ['New notebook…', 'Import from OneNote…', 'Rename this notebook…', 'Delete this notebook…'],
+    );
+    await page.keyboard.press('Escape');
+    await page.locator('#tabs button[data-tab="help"]').click();
+    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click();
+    assert.ok((await page.locator('.dialog-table tr').count()) > 15);
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.overlay', { state: 'detached' });
   });
 
   await step('dark theme renders', async () => {

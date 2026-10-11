@@ -61,6 +61,12 @@ pub struct Page {
     /// time such a page is opened, then clears the flag.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reflow: bool,
+    /// Rule lines drawn behind the page: `"ruled"` or `"grid"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<String>,
+    /// Page background colour as `#rrggbb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     #[serde(default)]
     pub blocks: Vec<Block>,
 }
@@ -110,6 +116,56 @@ pub enum Block {
         #[serde(default)]
         alt: String,
     },
+    /// Freehand drawing: one or more pen strokes.
+    Ink {
+        id: String,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        strokes: Vec<Stroke>,
+    },
+}
+
+impl Block {
+    pub fn id(&self) -> &str {
+        match self {
+            Block::Text { id, .. } | Block::Image { id, .. } | Block::Ink { id, .. } => id,
+        }
+    }
+
+    /// Move the block so its top-left corner is at the given point.
+    pub fn set_position(&mut self, new_x: f64, new_y: f64) {
+        match self {
+            Block::Text { x, y, .. } | Block::Image { x, y, .. } | Block::Ink { x, y, .. } => {
+                *x = new_x;
+                *y = new_y;
+            }
+        }
+    }
+}
+
+fn full_opacity() -> f32 {
+    1.0
+}
+
+fn is_full_opacity(v: &f32) -> bool {
+    *v >= 1.0
+}
+
+/// One continuous pen line. Points are CSS pixels from the top-left corner
+/// of the ink block that holds the stroke.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Stroke {
+    pub points: Vec<[f32; 2]>,
+    /// `#rrggbb`
+    pub color: String,
+    /// Line thickness in CSS pixels.
+    pub width: f32,
+    /// 1 for a pen; lower for a highlighter.
+    #[serde(default = "full_opacity", skip_serializing_if = "is_full_opacity")]
+    pub opacity: f32,
 }
 
 // ---- views handed to the UI -------------------------------------------------

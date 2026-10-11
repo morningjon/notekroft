@@ -49,7 +49,28 @@ export interface ImageBlock {
   alt: string;
 }
 
-export type Block = TextBlock | ImageBlock;
+/** One continuous pen line. Points are pixels from the ink block's corner. */
+export interface Stroke {
+  points: [number, number][];
+  color: string;
+  width: number;
+  /** 1 for a pen (and then left out); lower for a highlighter. */
+  opacity?: number;
+}
+
+export interface InkBlock {
+  kind: 'ink';
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  strokes: Stroke[];
+}
+
+export type Block = TextBlock | ImageBlock | InkBlock;
+
+export type Rules = 'ruled' | 'grid';
 
 export interface Page {
   id: string;
@@ -58,6 +79,10 @@ export interface Page {
   modified: number;
   /** Imported page whose blocks still need nudging apart; see Editor.reflow. */
   reflow?: boolean;
+  /** Rule lines behind the page. */
+  rules?: Rules | null;
+  /** Page background colour, `#rrggbb`. */
+  color?: string | null;
   blocks: Block[];
 }
 
@@ -65,6 +90,7 @@ export interface ImportSummary {
   sections: { id: string; title: string; pages: number }[];
   pages: number;
   pictures: number;
+  drawings: number;
   skipped: { ink: number; files: number; pictures: number; other: number };
   warnings: string[];
 }
@@ -431,7 +457,7 @@ class DemoBackend implements Backend {
         for (const entry of sec.pages) {
           const page = nb.pages[entry.id];
           if (!page) continue;
-          const body = page.blocks.map((b) => (b.kind === 'text' ? htmlToText(b.html) : b.alt)).join(' ');
+          const body = page.blocks.map((b) => (b.kind === 'text' ? htmlToText(b.html) : b.kind === 'image' ? b.alt : '')).join(' ');
           const title = page.title.toLowerCase();
           const lower = body.toLowerCase();
           if (!terms.every((t) => title.includes(t) || lower.includes(t))) continue;

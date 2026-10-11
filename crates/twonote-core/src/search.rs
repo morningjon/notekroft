@@ -76,7 +76,7 @@ impl Library {
                         .filter_map(|b| match b {
                             Block::Text { html, .. } => Some(html::to_text(html)),
                             Block::Image { alt, .. } if !alt.is_empty() => Some(alt.clone()),
-                            Block::Image { .. } => None,
+                            Block::Image { .. } | Block::Ink { .. } => None,
                         })
                         .collect::<Vec<_>>()
                         .join(" ");

@@ -3,11 +3,13 @@
 use std::io::Read;
 
 use onenote_parser::contents::{
-    Content, EmbeddedFile, Image, Outline, OutlineElement, OutlineItem, RichText, Table,
+    Content, EmbeddedFile, EmbeddedObject, Image, Ink, NoteTag, Outline, OutlineElement,
+    OutlineItem, RichText, Table,
 };
 use onenote_parser::page::{Page, PageContent};
 use onenote_parser::property::common::ColorRef;
-use twonote_core::{new_id, Block, Library, NewPage};
+use onenote_parser::property::rich_text::ParagraphAlignment;
+use twonote_core::{new_id, Block, Library, NewPage, Stroke};
 
 use crate::html::{self, Node, Run, Tag};
 use crate::Skipped;
@@ -18,6 +20,12 @@ const DEFAULT_OUTLINE_WIDTH: f64 = 520.0;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_IMAGE_WIDTH: f64 = 1200.0;
 const MAX_ALT_CHARS: usize = 300;
+/// Ink coordinates are in HIMETRIC units, 2540 to the inch.
+const HIMETRIC_PER_PX: f32 = 2540.0 / 96.0;
+/// OneNote's default body text, which imports as TwoNote's own default
+/// rather than as explicit formatting on every paragraph.
+const DEFAULT_FONT: &str = "Calibri";
+const DEFAULT_SIZE_PT: f32 = 11.0;
 
 /// Marks a numbered (as opposed to bulleted) list in a OneNote list format.
 const NUMBER_PLACEHOLDER: char = '\u{fffd}';
@@ -37,6 +45,7 @@ pub(crate) struct Converter<'a> {
     pub lib: &'a Library,
     pub notebook: &'a str,
     pub pictures: usize,
+    pub drawings: usize,
     pub skipped: Skipped,
 }
 
@@ -54,11 +63,139 @@ fn png_size(bytes: &[u8]) -> Option<(f64, f64)> {
     (w > 0 && h > 0).then_some((f64::from(w), f64::from(h)))
 }
 
-fn is_highlighted(color: Option<ColorRef>) -> bool {
+fn hex(color: Option<ColorRef>) -> Option<(u8, u8, u8)> {
     match color {
-        Some(ColorRef::Manual { r, g, b }) => !(r == 255 && g == 255 && b == 255),
-        _ => false,
+        Some(ColorRef::Manual { r, g, b }) => Some((r, g, b)),
+        _ => None,
     }
+}
+
+/// A highlight colour, unless it is white (which is no highlight at all).
+fn highlight_colour(color: Option<ColorRef>) -> Option<String> {
+    hex(color)
+        .filter(|rgb| *rgb != (255, 255, 255))
+        .map(|(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+}
+
+/// A text colour, unless it is plain black (the default).
+fn text_colour(color: Option<ColorRef>) -> Option<String> {
+    hex(color)
+        .filter(|rgb| *rgb != (0, 0, 0))
+        .map(|(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+}
+
+/// Map a OneNote tag onto one of TwoNote's, going by its icon and, for the
+/// icon-less highlight tags, its name. Tick-box tags are handled separately.
+fn note_tag_class(tag: &NoteTag) -> Option<&'static str> {
+    let definition = tag.definition()?;
+    let shape = format!("{:?}", definition.shape());
+    let label = definition.label().to_lowercase();
+    let has = |needle: &str| shape.contains(needle);
+    Some(if shape == "NoIcon" {
+        if label.contains("definition") {
+            "tag-definition"
+        } else if label.contains("remember") {
+            "tag-remember"
+        } else if definition.highlight_color().is_some() {
+            "tag-highlight"
+        } else {
+            return None;
+        }
+    } else if has("CheckBox") {
+        return None;
+    } else if has("Star") {
+        "tag-important"
+    } else if has("Question") {
+        "tag-question"
+    } else if has("LightBulb") {
+        "tag-idea"
+    } else if has("Priority") || has("Exclamation") || has("TimeSensitive") || has("Lightning") {
+        "tag-critical"
+    } else if has("Contact") || has("Person") || has("People") {
+        "tag-contact"
+    } else if shape == "Home" {
+        "tag-address"
+    } else if has("Phone") {
+        "tag-phone"
+    } else if has("Globe") {
+        "tag-website"
+    } else if has("Key") || has("Padlock") {
+        "tag-password"
+    } else if has("Movie") {
+        "tag-movie"
+    } else if has("Book") {
+        "tag-book"
+    } else if has("Music") {
+        "tag-music"
+    } else if has("Research") || has("Paper") || has("Quotation") {
+        "tag-source"
+    } else if has("Pushpin") || has("Bell") {
+        "tag-remember"
+    } else {
+        return None;
+    })
+}
+
+/// Gather every stroke under an ink object as absolute page pixels. The
+/// first point of a stroke is its position; the rest are steps from the
+/// point before.
+fn collect_strokes(ink: &Ink, out: &mut Vec<Stroke>) {
+    for child in ink.child_groups() {
+        collect_strokes(child, out);
+    }
+    let ox = ink.offset_horizontal().unwrap_or(0.0) * PX_PER_HALF_INCH as f32;
+    let oy = ink.offset_vertical().unwrap_or(0.0) * PX_PER_HALF_INCH as f32;
+    for stroke in ink.ink_strokes() {
+        let Some((first, steps)) = stroke.path().split_first() else {
+            continue;
+        };
+        let (mut x, mut y) = (first.x(), first.y());
+        let mut points = vec![[x / HIMETRIC_PER_PX + ox, y / HIMETRIC_PER_PX + oy]];
+        for step in steps {
+            x += step.x();
+            y += step.y();
+            points.push([x / HIMETRIC_PER_PX + ox, y / HIMETRIC_PER_PX + oy]);
+        }
+        // Stored blue-green-red, lowest byte red.
+        let color = stroke.color().unwrap_or(0);
+        let (r, g, b) = (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff);
+        out.push(Stroke {
+            points,
+            color: format!("#{r:02x}{g:02x}{b:02x}"),
+            width: (stroke.width().max(stroke.height()) / HIMETRIC_PER_PX).clamp(1.0, 60.0),
+            opacity: (f32::from(255 - stroke.transparency().unwrap_or(0)) / 255.0).clamp(0.05, 1.0),
+        });
+    }
+}
+
+/// A drawing as a TwoNote ink block, with its position on the page.
+fn ink_block(ink: &Ink) -> Option<(f64, f64, Block)> {
+    let mut strokes = Vec::new();
+    collect_strokes(ink, &mut strokes);
+    let pad = strokes.iter().map(|s| s.width).fold(0.0_f32, f32::max) / 2.0 + 1.0;
+    let all = || strokes.iter().flat_map(|s| s.points.iter());
+    let min_x = all().map(|p| p[0]).fold(f32::INFINITY, f32::min) - pad;
+    let min_y = all().map(|p| p[1]).fold(f32::INFINITY, f32::min) - pad;
+    let max_x = all().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max) + pad;
+    let max_y = all().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max) + pad;
+    if !(min_x.is_finite() && min_y.is_finite() && max_x.is_finite() && max_y.is_finite()) {
+        return None;
+    }
+    for stroke in &mut strokes {
+        for point in &mut stroke.points {
+            point[0] -= min_x;
+            point[1] -= min_y;
+        }
+    }
+    let block = Block::Ink {
+        id: new_id(),
+        x: 0.0,
+        y: 0.0,
+        w: f64::from(max_x - min_x),
+        h: f64::from(max_y - min_y),
+        strokes,
+    };
+    Some((f64::from(min_x), f64::from(min_y), block))
 }
 
 impl Converter<'_> {
@@ -115,7 +252,17 @@ impl Converter<'_> {
                         block: notice_block(&self.attachment_notice(file)),
                     });
                 }
-                PageContent::Ink(_) => self.skipped.ink += 1,
+                PageContent::Ink(ink) => match ink_block(ink) {
+                    Some((x, y, block)) => {
+                        self.drawings += 1;
+                        placed.push(Placed {
+                            x: Some(x),
+                            y: Some(y),
+                            block,
+                        });
+                    }
+                    None => self.skipped.other += 1,
+                },
                 PageContent::Unknown => self.skipped.other += 1,
             }
         }
@@ -146,31 +293,9 @@ impl Converter<'_> {
                         y
                     }
                 };
-                match p.block {
-                    Block::Text { id, w, html, .. } => Block::Text {
-                        id,
-                        x: nx,
-                        y: ny,
-                        w,
-                        html,
-                    },
-                    Block::Image {
-                        id,
-                        w,
-                        h,
-                        asset,
-                        alt,
-                        ..
-                    } => Block::Image {
-                        id,
-                        x: nx,
-                        y: ny,
-                        w,
-                        h,
-                        asset,
-                        alt,
-                    },
-                }
+                let mut block = p.block;
+                block.set_position(nx, ny);
+                block
             })
             .collect();
 
@@ -201,7 +326,15 @@ impl Converter<'_> {
         let mut own: Vec<Node> = Vec::new();
         for content in element.contents() {
             match content {
-                Content::RichText(text) => own.push(paragraph(text)),
+                Content::RichText(text) => {
+                    // Handwriting written in line with text is not kept yet.
+                    self.skipped.ink += text
+                        .embedded_objects()
+                        .iter()
+                        .filter(|o| matches!(o, EmbeddedObject::Ink(_)))
+                        .count();
+                    own.push(paragraph(text));
+                }
                 Content::Table(table) => own.push(self.table(table)),
                 Content::Image(image) => own.push(match self.picture(image) {
                     Some(p) => Node::Image {
@@ -349,8 +482,13 @@ fn paragraph(text: &RichText) -> Node {
     let tag = match text.paragraph_style().style_id() {
         Some("h1") => Tag::H1,
         Some("h2") => Tag::H2,
-        Some("h3" | "h4" | "h5" | "h6") => Tag::H3,
+        Some("h3") => Tag::H3,
+        Some("h4") => Tag::H4,
+        Some("h5") => Tag::H5,
+        Some("h6") => Tag::H6,
         Some("code") => Tag::Code,
+        Some("blockquote") => Tag::Quote,
+        Some("cite") => Tag::Cite,
         _ => Tag::Div,
     };
     let todo = text.note_tags().iter().find_map(|tag| {
@@ -358,16 +496,26 @@ fn paragraph(text: &RichText) -> Node {
             || tag.item_status().task_tag();
         checkable.then(|| tag.item_status().completed())
     });
+    let align = match text.paragraph_alignment() {
+        ParagraphAlignment::Center => Some("center"),
+        ParagraphAlignment::Right => Some("right"),
+        _ => None,
+    };
     Node::Para {
         tag,
         todo,
-        runs: runs(text),
+        note_tag: text.note_tags().iter().find_map(note_tag_class),
+        align,
+        runs: runs(text, tag.is_heading()),
     }
 }
 
 /// Split paragraph text into formatted runs. Run boundaries and hyperlink
 /// ranges are UTF-16 offsets, so the text is handled as UTF-16 here.
-fn runs(text: &RichText) -> Vec<Run> {
+///
+/// Headings take their look from the heading style, so their runs keep only
+/// emphasis and highlight, not a font, size or colour.
+fn runs(text: &RichText, heading: bool) -> Vec<Run> {
     let units: Vec<u16> = text.text().encode_utf16().collect();
     let styles = text.text_run_formatting();
     let links = text.hyperlinks();
@@ -403,6 +551,15 @@ fn runs(text: &RichText) -> Vec<Run> {
             .iter()
             .find(|l| (l.start() as usize) <= run_start && run_start < l.end() as usize)
             .map(|l| l.target().to_string());
+        let font = style
+            .font()
+            .filter(|f| !heading && !f.eq_ignore_ascii_case(DEFAULT_FONT))
+            .map(str::to_string);
+        // Stored in half points.
+        let size = style
+            .font_size()
+            .map(|half| f32::from(half) / 2.0)
+            .filter(|pt| !heading && (*pt - DEFAULT_SIZE_PT).abs() > 0.01);
         out.push(Run {
             text: visible,
             bold: style.bold(),
@@ -411,7 +568,11 @@ fn runs(text: &RichText) -> Vec<Run> {
             strike: style.strikethrough(),
             superscript: style.superscript(),
             subscript: style.subscript(),
-            highlight: is_highlighted(style.highlight()),
+            font,
+            size,
+            // Link text is coloured by being a link.
+            color: text_colour(style.font_color()).filter(|_| !heading && link.is_none()),
+            highlight: highlight_colour(style.highlight()),
             link,
         });
     }
@@ -433,19 +594,17 @@ mod tests {
     }
 
     #[test]
-    fn white_highlight_is_not_a_highlight() {
-        assert!(is_highlighted(Some(ColorRef::Manual {
-            r: 255,
-            g: 255,
-            b: 0
-        })));
-        assert!(!is_highlighted(Some(ColorRef::Manual {
-            r: 255,
-            g: 255,
-            b: 255
-        })));
-        assert!(!is_highlighted(Some(ColorRef::Auto)));
-        assert!(!is_highlighted(None));
+    fn default_colours_are_not_formatting() {
+        let manual = |r, g, b| Some(ColorRef::Manual { r, g, b });
+        assert_eq!(
+            highlight_colour(manual(255, 255, 0)).as_deref(),
+            Some("#ffff00")
+        );
+        assert_eq!(highlight_colour(manual(255, 255, 255)), None);
+        assert_eq!(highlight_colour(Some(ColorRef::Auto)), None);
+        assert_eq!(text_colour(manual(192, 0, 0)).as_deref(), Some("#c00000"));
+        assert_eq!(text_colour(manual(0, 0, 0)), None);
+        assert_eq!(text_colour(None), None);
     }
 
     #[test]
@@ -457,6 +616,8 @@ mod tests {
         let para = Node::Para {
             tag: Tag::Div,
             todo: None,
+            note_tag: None,
+            align: None,
             runs: vec![],
         };
         let mut out = Vec::new();

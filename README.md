@@ -11,30 +11,46 @@ JSON files in a folder you own. The app makes no network requests.
 
 ## Status
 
-Milestone 1: a usable notebook app with its own open format.
+A usable notebook app with its own open format, a OneNote-style ribbon,
+handwriting, and OneNote import.
 
 What works today:
 
-- Notebooks, sections (colours, rename, drag to reorder) and pages (subpages
-  to two levels, drag to reorder, drop onto a section to move)
-- Freeform canvas: click empty space for a new note container, drag it by its
-  top bar, resize it from its right edge
-- Rich text: headings, bold, italic, underline, strikethrough, highlight,
-  bullet and numbered lists, links, to-do tags with tick boxes
-- Tables: press Tab after some text to start one, Tab through cells, Tab in
-  the last cell for a new row, right-click for row and column operations
-- Pictures: paste, drop, or pick a file; drag to move, corner handle to resize
-- Search across every notebook (Ctrl+E)
-- Autosave, light and dark themes
-- Deleting is safe: pages, sections and notebooks move to `.trash` inside the
-  library instead of being destroyed
+- **Notebooks**: sections (colours, rename, drag to reorder) and pages
+  (subpages to two levels, drag to reorder, drop onto a section to move)
+- **Freeform canvas**: click empty space for a new note container, drag it by
+  its top bar, resize it from its right edge
+- **Ribbon** with Home, Insert, Draw and View tabs, laid out as in OneNote
+- **Text formatting**: fonts, sizes, text and highlight colours, bold, italic,
+  underline, strikethrough, subscript, superscript, alignment, indent, clear
+  formatting, and the format painter
+- **Paragraph styles**: Heading 1 to 6, Citation, Quote, Code and Normal
+- **Lists and tags**: bullet and numbered lists, to-do tick boxes, and 16 note
+  tags (Important, Question, Remember for later, Definition, Idea, Critical,
+  Contact, and more)
+- **Tables**: pick a size from a grid, or press Tab after some text; Tab
+  through cells, Tab in the last cell for a new row, right-click for row and
+  column operations
+- **Inserts**: pictures (paste, drop or pick), links, date and time stamps,
+  horizontal lines, symbols
+- **Handwriting and drawing**: pens and a highlighter in any colour and
+  thickness, an eraser, and line, arrow, rectangle and ellipse shapes. Works
+  with a mouse, a touch screen or a stylus. Strokes written together move and
+  delete as one drawing
+- **Undo and redo** for everything on the page: typing, formatting, moving
+  things, pictures and ink
+- **Page look**: zoom, rule lines or a grid, page colour, light and dark themes
+- **Search** across every notebook (Ctrl+E)
+- **Import from OneNote**: `.one` section files or a whole notebook, keeping
+  text, fonts, colours, lists, tags, tables, links, pictures, handwriting,
+  subpages and original dates (see
+  [Importing from OneNote](#importing-from-onenote))
+- **Safe by default**: autosave, and deleting moves pages, sections and
+  notebooks to `.trash` inside the library instead of destroying them
 
-- Import from OneNote: bring in `.one` section files or a whole notebook,
-  keeping text, formatting, lists, to-dos, tables, links, pictures, subpages
-  and original dates (see [Importing from OneNote](#importing-from-onenote))
-
-Not yet built (see [Roadmap](#roadmap)): ink, attached files, undo for moving
-containers, page history, sync.
+Not yet built (see [Roadmap](#roadmap)): attached files, audio recording,
+equations, handwriting-to-text, lasso select and resizing of ink, page
+history, sync.
 
 ## Where your notes live
 
@@ -93,14 +109,21 @@ What comes across:
 
 | Kept | Not yet |
 | --- | --- |
-| Pages, subpages, titles, created and modified dates | Ink and handwriting |
-| Section names, colours and section groups | Attached files, audio and video (a note marks where each was) |
-| Note containers in their original positions | Pictures stored as EMF, BMP or TIFF |
-| Bold, italic, underline, strikethrough, highlight, super and subscript | Fonts, text sizes and text colours |
-| Headings, bullet and numbered lists, indentation | Tags other than to-do tick boxes |
-| To-do tick boxes, ticked or not | Equations (their text is kept, not the layout) |
-| Tables, web and email links | Links to other OneNote pages (the text is kept) |
-| PNG, JPEG, GIF and WebP pictures, inline or free-standing | Password-protected sections |
+| Pages, subpages, titles, created and modified dates | Attached files, audio and video (a note marks where each was) |
+| Section names, colours and section groups | Pictures stored as EMF, BMP or TIFF |
+| Note containers in their original positions | Handwriting written in line with typed text |
+| Fonts, text sizes, text and highlight colours | Equations (their text is kept, not the layout) |
+| Bold, italic, underline, strikethrough, super and subscript | Links to other OneNote pages (the text is kept) |
+| Heading 1 to 6, Citation, Quote and Code styles, alignment | Custom tags with no close match (the text is kept) |
+| Bullet and numbered lists, indentation | Password-protected sections |
+| To-do tick boxes and the common note tags | |
+| Tables, web and email links | |
+| PNG, JPEG, GIF and WebP pictures, inline or free-standing | |
+| Handwriting and drawings, with pen colour, thickness and highlighter | |
+
+Text in OneNote's default font (Calibri, 11 point) is imported as plain text
+in TwoNote's own default, so only deliberate font choices are kept as
+formatting.
 
 After an import, TwoNote tells you how many of each skipped item it found.
 The first time you open an imported page, overlapping note containers are
@@ -119,7 +142,8 @@ cargo run -p twonote-onenote --example import -- \
 
 ## Shortcuts
 
-Shortcuts follow OneNote's where one exists.
+Shortcuts follow OneNote's where one exists. The full list is in the app
+under Help, Keyboard shortcuts.
 
 | Action | Shortcut |
 | --- | --- |
@@ -127,15 +151,24 @@ Shortcuts follow OneNote's where one exists.
 | New page / new section | Ctrl+N / Ctrl+T |
 | Previous / next page | Ctrl+PageUp / Ctrl+PageDown |
 | Make subpage / promote | Ctrl+Alt+] / Ctrl+Alt+[ |
+| Undo / redo | Ctrl+Z / Ctrl+Y |
 | Bold, italic, underline | Ctrl+B, Ctrl+I, Ctrl+U |
 | Strikethrough | Ctrl+- |
+| Subscript / superscript | Ctrl+= / Ctrl+Shift+= |
 | Highlight | Ctrl+Alt+H |
 | Bullet list / numbered list | Ctrl+. / Ctrl+/ |
-| To-do tag | Ctrl+1 |
-| Heading 1, 2, 3 / normal text | Ctrl+Alt+1, 2, 3 / Ctrl+Shift+N |
+| Increase / decrease indent | Alt+Shift+Right / Alt+Shift+Left |
+| Align left / right | Ctrl+L / Ctrl+R |
+| Heading 1 to 6 / normal text | Ctrl+Alt+1 to 6 / Ctrl+Shift+N |
+| To Do, Important, Question tags | Ctrl+1, Ctrl+2, Ctrl+3 |
+| Remember for later, Definition tags | Ctrl+4, Ctrl+5 |
+| Remove tag | Ctrl+0 |
 | Insert link | Ctrl+K |
+| Insert date / time / both | Alt+Shift+D / Alt+Shift+T / Alt+Shift+F |
 | Start a table, next cell | Tab |
 | Open a link | Ctrl+click |
+| Zoom in / out | Ctrl+Alt+= / Ctrl+Alt+- |
+| Stop drawing | Esc |
 
 On macOS use Cmd in place of Ctrl.
 
@@ -166,6 +199,9 @@ npm run build && npm run test:ui      # interface, in headless Chromium
 - Note content is a fixed subset of HTML. It is sanitised in Rust (with
   [ammonia](https://crates.io/crates/ammonia)) when written and again when
   read, so a notebook copied in from elsewhere cannot carry script.
+- Formatting is limited to five style properties (font, size, text colour,
+  highlight, alignment), each with a validated value. A note cannot position,
+  hide or load anything.
 - A strict Content Security Policy blocks inline script and all remote
   content. Pasted web content has its images removed rather than fetched.
 - Links open in your default browser, and only `http`, `https` and `mailto`
@@ -173,9 +209,10 @@ npm run build && npm run test:ui      # interface, in headless Chromium
 
 ## Roadmap
 
-1. Undo and redo for canvas operations; page version history
-2. Ink and drawing, including ink from imported OneNote pages
-3. Attached files
+1. More for ink: lasso select, resize and recolour, handwriting in line with
+   text
+2. Attached files and audio notes
+3. Page version history
 4. Export to Markdown and HTML
 5. Optional end-to-end encrypted sync
 

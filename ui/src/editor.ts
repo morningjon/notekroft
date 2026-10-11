@@ -1,15 +1,16 @@
 // The freeform page canvas: note containers you can click anywhere to create,
-// drag, and resize, plus pictures. Rich text is edited in place with
+// drag, and resize, plus pictures and ink. Rich text is edited in place with
 // contenteditable and stored as a small sanitised subset of HTML.
 
-import type { Block, ImageBlock, TextBlock } from './api';
-import { normaliseUrl, sanitizeHtml } from './sanitize';
+import type { Block, ImageBlock, InkBlock, Stroke, TextBlock } from './api';
+import { absoluteStrokes, blockFromAbsolute, inkSvg, pathData, shapePoints, type Point, type Shape } from './ink';
+import { normaliseColour, normaliseStyle, normaliseUrl, NOTE_TAGS, sanitizeHtml, type NoteTag } from './sanitize';
 import { h, type MenuItem } from './widgets';
 
 export interface EditorHost {
   /** Something on the page changed and should be saved. */
   onChange(): void;
-  /** The caret moved; toolbar state may need refreshing. */
+  /** The caret, formatting or tool changed; the ribbon may need refreshing. */
   onSelection(): void;
   assetUrl(name: string): Promise<string>;
   saveImage(bytes: Uint8Array): Promise<string>;
@@ -18,27 +19,63 @@ export interface EditorHost {
   notify(message: string): void;
 }
 
-export interface FormatState {
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-  strikeThrough: boolean;
-  insertUnorderedList: boolean;
-  insertOrderedList: boolean;
-}
+export type ParagraphStyle = 'div' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'quote' | 'cite' | 'code';
+export type Alignment = 'left' | 'center' | 'right' | 'justify';
 
-export type InlineCommand = keyof FormatState;
+export type ToggleCommand =
+  | 'bold'
+  | 'italic'
+  | 'underline'
+  | 'strikeThrough'
+  | 'subscript'
+  | 'superscript'
+  | 'insertUnorderedList'
+  | 'insertOrderedList';
+
+export type Command = ToggleCommand | 'removeFormat' | 'indent' | 'outdent';
+
+export type FormatState = Record<ToggleCommand, boolean> & {
+  /** Explicit font at the caret, or '' for the default. */
+  font: string;
+  /** Text size at the caret, in points. */
+  size: number;
+  align: Alignment;
+  style: ParagraphStyle;
+  todo: boolean;
+  tag: NoteTag | null;
+};
+
+export type Tool =
+  | { kind: 'type' }
+  | { kind: 'pen'; color: string; width: number; opacity: number }
+  | { kind: 'eraser' }
+  | { kind: 'shape'; shape: Shape; color: string; width: number };
+
+/** Formatting carried by the format painter. */
+interface Paint {
+  toggles: ToggleCommand[];
+  font: string;
+  size: number | null;
+  color: string | null;
+  highlight: string | null;
+}
 
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 120;
 const MAX_IMAGE_WIDTH = 560;
-const HIGHLIGHT = '#ffe866';
 const TODO_GUTTER = 24;
+/** Points for the legacy 1 to 7 font sizes that browsers still produce. */
+const LEGACY_SIZES = [8, 10, 12, 14, 18, 24, 36];
+const INLINE_TOGGLES: ToggleCommand[] = ['bold', 'italic', 'underline', 'strikeThrough', 'subscript', 'superscript'];
+const HISTORY_LIMIT = 100;
+/** Strokes drawn this soon after one another join the same drawing. */
+const INK_GROUP_MS = 1500;
 
 const px = (n: number) => `${Math.round(n)}px`;
 const num = (s: string) => Number.parseFloat(s) || 0;
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const firstFont = (family: string) => family.split(',')[0].trim().replace(/^["']|["']$/g, '');
 
 function caretIn(el: Node, atEnd = false) {
   const range = document.createRange();
@@ -70,9 +107,29 @@ function measure(url: string): Promise<{ w: number; h: number }> {
   });
 }
 
+function cleanClass(el: Element) {
+  if (!el.getAttribute('class')) el.removeAttribute('class');
+}
+
 export class Editor {
-  private selectedImage: HTMLElement | null = null;
+  /** Colours the highlight and font-colour buttons apply. */
+  highlightColor = '#ffff00';
+  fontColor = '#c00000';
+
+  private tool: Tool = { kind: 'type' };
+  private scale = 1;
+  private selected: HTMLElement | null = null;
   private lastRange: Range | null = null;
+  private inkData = new WeakMap<HTMLElement, InkBlock>();
+  private lastInk: { el: HTMLElement; time: number } | null = null;
+  private pendingSize: number | null = null;
+  private paint: Paint | null = null;
+
+  private history: string[] = [];
+  private cursor = -1;
+  private snapshotTimer = 0;
+  /** A change has happened that is not yet in the history. */
+  private pending = false;
 
   constructor(
     private canvas: HTMLElement,
@@ -90,6 +147,7 @@ export class Editor {
     canvas.addEventListener('drop', (e) => this.onDrop(e));
     document.addEventListener('paste', (e) => this.onPaste(e));
     document.addEventListener('keydown', (e) => this.onDocumentKeyDown(e));
+    document.addEventListener('mouseup', () => this.applyPaint());
     document.addEventListener('selectionchange', () => {
       const content = this.currentContent();
       const sel = window.getSelection();
@@ -100,13 +158,24 @@ export class Editor {
 
   // ---- loading and saving ----------------------------------------------------
 
+  /** Show a page's blocks. This starts a fresh undo history. */
   load(blocks: Block[]) {
+    this.render(blocks);
+    clearTimeout(this.snapshotTimer);
+    this.pending = false;
+    this.history = [JSON.stringify(this.serialize())];
+    this.cursor = 0;
+  }
+
+  private render(blocks: Block[]) {
     this.canvas.replaceChildren();
-    this.selectedImage = null;
+    this.selected = null;
     this.lastRange = null;
+    this.lastInk = null;
     for (const b of blocks) {
       if (b.kind === 'text') this.addText(b);
-      else this.addImage(b);
+      else if (b.kind === 'image') this.addImage(b);
+      else this.addInk(b);
     }
     this.fit();
   }
@@ -114,13 +183,18 @@ export class Editor {
   serialize(): Block[] {
     const out: Block[] = [];
     for (const el of Array.from(this.canvas.children) as HTMLElement[]) {
-      const base = { id: el.dataset.id!, x: num(el.style.left), y: num(el.style.top), w: num(el.style.width) };
+      const x = num(el.style.left);
+      const y = num(el.style.top);
+      const id = el.dataset.id!;
       if (el.classList.contains('text')) {
         const content = el.querySelector<HTMLElement>('.content')!;
         if (this.isEmpty(content)) continue;
-        out.push({ kind: 'text', ...base, html: sanitizeHtml(content.innerHTML) });
+        out.push({ kind: 'text', id, x, y, w: num(el.style.width), html: sanitizeHtml(content.innerHTML) });
       } else if (el.classList.contains('image')) {
-        out.push({ kind: 'image', ...base, h: num(el.style.height), asset: el.dataset.asset!, alt: '' });
+        out.push({ kind: 'image', id, x, y, w: num(el.style.width), h: num(el.style.height), asset: el.dataset.asset!, alt: '' });
+      } else if (el.classList.contains('ink')) {
+        const data = this.inkData.get(el);
+        if (data?.strokes.length) out.push({ ...data, x, y });
       }
     }
     return out;
@@ -134,6 +208,65 @@ export class Editor {
     const content = el.querySelector<HTMLElement>('.content')!;
     content.focus();
     caretIn(content, true);
+  }
+
+  // ---- undo and redo ---------------------------------------------------------
+  // One history for everything on the page: typing, formatting, moving
+  // containers, pictures and ink. Each step is a snapshot of the page.
+
+  get canUndo() {
+    return this.cursor > 0 || this.pending;
+  }
+
+  get canRedo() {
+    return this.cursor < this.history.length - 1;
+  }
+
+  private snapshot() {
+    clearTimeout(this.snapshotTimer);
+    this.pending = false;
+    const now = JSON.stringify(this.serialize());
+    if (now === this.history[this.cursor]) return;
+    this.history.length = this.cursor + 1;
+    this.history.push(now);
+    if (this.history.length > HISTORY_LIMIT) this.history.shift();
+    this.cursor = this.history.length - 1;
+  }
+
+  undo() {
+    this.snapshot();
+    if (this.cursor > 0) this.restore(this.cursor - 1);
+  }
+
+  redo() {
+    if (this.canRedo) this.restore(this.cursor + 1);
+  }
+
+  private restore(index: number) {
+    const focused = this.currentContent()?.parentElement?.dataset.id;
+    this.cursor = index;
+    this.render(JSON.parse(this.history[index]) as Block[]);
+    if (focused) {
+      const content = this.canvas.querySelector<HTMLElement>(`.block.text[data-id="${CSS.escape(focused)}"] .content`);
+      if (content) {
+        content.focus();
+        caretIn(content, true);
+      }
+    }
+    this.host.onChange();
+    this.host.onSelection();
+  }
+
+  /** Record a change. Typing is grouped into steps by short pauses; anything
+   *  discrete (a move, a stroke, a format) is its own step. */
+  private changed(discrete = false) {
+    this.fit();
+    this.host.onChange();
+    this.host.onSelection();
+    clearTimeout(this.snapshotTimer);
+    this.pending = true;
+    if (discrete) this.snapshot();
+    else this.snapshotTimer = window.setTimeout(() => this.snapshot(), 500);
   }
 
   // ---- blocks ----------------------------------------------------------------
@@ -195,7 +328,7 @@ export class Editor {
     this.canvas.append(el);
 
     this.drag(el, (e) => {
-      if (e.target === handle) return null;
+      if (e.target === handle || this.tool.kind !== 'type') return null;
       (document.activeElement as HTMLElement | null)?.blur?.();
       this.select(el);
       const x0 = num(el.style.left);
@@ -212,6 +345,33 @@ export class Editor {
         const w = Math.max(24, Math.min(4000, w0 + dx));
         el.style.width = px(w);
         el.style.height = px(w / ratio);
+      };
+    });
+    return el;
+  }
+
+  private addInk(b: InkBlock): HTMLElement {
+    const el = h('div', 'block ink');
+    el.dataset.id = b.id;
+    el.style.left = `${b.x}px`;
+    el.style.top = `${b.y}px`;
+    el.style.width = `${b.w}px`;
+    el.style.height = `${b.h}px`;
+    el.append(inkSvg(b.strokes));
+    this.inkData.set(el, b);
+    this.canvas.append(el);
+
+    // Only the lines themselves take clicks, so the space between them
+    // still starts a note.
+    this.drag(el, () => {
+      if (this.tool.kind !== 'type') return null;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      this.select(el);
+      const x0 = num(el.style.left);
+      const y0 = num(el.style.top);
+      return (dx, dy) => {
+        el.style.left = `${Math.max(0, x0 + dx)}px`;
+        el.style.top = `${Math.max(0, y0 + dy)}px`;
       };
     });
     return el;
@@ -235,17 +395,14 @@ export class Editor {
       let moved = false;
       const onMove = (ev: PointerEvent) => {
         moved = true;
-        move(ev.clientX - sx, ev.clientY - sy);
+        move((ev.clientX - sx) / this.scale, (ev.clientY - sy) / this.scale);
       };
       const onUp = () => {
         target.removeEventListener('pointermove', onMove);
         target.removeEventListener('pointerup', onUp);
         target.removeEventListener('pointercancel', onUp);
         end?.();
-        if (moved) {
-          this.fit();
-          this.host.onChange();
-        }
+        if (moved) this.changed(true);
       };
       target.addEventListener('pointermove', onMove);
       target.addEventListener('pointerup', onUp);
@@ -254,13 +411,13 @@ export class Editor {
   }
 
   private select(el: HTMLElement | null) {
-    this.selectedImage?.classList.remove('selected');
-    this.selectedImage = el;
+    this.selected?.classList.remove('selected');
+    this.selected = el;
     el?.classList.add('selected');
   }
 
   private isEmpty(content: HTMLElement): boolean {
-    return (content.textContent ?? '').trim() === '' && !content.querySelector('table, img');
+    return (content.textContent ?? '').trim() === '' && !content.querySelector('table, img, hr');
   }
 
   /** Give inline pictures something to show. Stored HTML only names the
@@ -276,14 +433,15 @@ export class Editor {
     }
   }
 
-  /** Move apart any blocks that overlap, working down the page. Imported
-   *  pages keep the positions another application gave them, but the same
-   *  text takes up different room here. Resolves to true if anything moved. */
+  /** Move apart any text or pictures that overlap, working down the page.
+   *  Imported pages keep the positions another application gave them, but
+   *  the same text takes up different room here. Ink is left alone: it is
+   *  meant to sit on top of things. Resolves to true if anything moved. */
   async reflow(): Promise<boolean> {
     await document.fonts?.ready;
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     const gap = 12;
-    const blocks = (Array.from(this.canvas.children) as HTMLElement[])
+    const blocks = (Array.from(this.canvas.querySelectorAll(':scope > .text, :scope > .image')) as HTMLElement[])
       .map((el) => ({ el, left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }))
       .sort((a, b) => a.top - b.top || a.left - b.left);
     const settled: typeof blocks = [];
@@ -307,6 +465,9 @@ export class Editor {
       settled.push(block);
     }
     this.fit();
+    // Not something to undo back past.
+    this.history = [JSON.stringify(this.serialize())];
+    this.cursor = 0;
     return moved;
   }
 
@@ -331,6 +492,18 @@ export class Editor {
       bottom = Math.max(bottom, el.offsetTop + el.offsetHeight);
     }
     return { x: 0, y: bottom ? bottom + 16 : 0 };
+  }
+
+  /** Where a pointer event falls on the page, whatever the zoom. */
+  private point(e: { clientX: number; clientY: number }): Point {
+    const box = this.canvas.getBoundingClientRect();
+    return [(e.clientX - box.left) / this.scale, (e.clientY - box.top) / this.scale];
+  }
+
+  /** Tell the editor how far the page is zoomed, so pointer movement maps
+   *  onto page distances. */
+  setScale(scale: number) {
+    this.scale = scale;
   }
 
   // ---- selection helpers -----------------------------------------------------
@@ -382,6 +555,27 @@ export class Editor {
     return n instanceof HTMLElement ? n : null;
   }
 
+  /** Every paragraph and list item the selection touches. */
+  private selectedLines(content: HTMLElement): HTMLElement[] {
+    this.lineBlock(content);
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return [];
+    const range = sel.getRangeAt(0);
+    const out: HTMLElement[] = [];
+    const visit = (parent: HTMLElement) => {
+      for (const child of Array.from(parent.children) as HTMLElement[]) {
+        if (!range.intersectsNode(child)) continue;
+        if (/^(UL|OL|BLOCKQUOTE)$/.test(child.tagName)) visit(child);
+        else if (child.tagName === 'LI') {
+          out.push(child);
+          visit(child);
+        } else if (/^(DIV|P|H[1-6])$/.test(child.tagName)) out.push(child);
+      }
+    };
+    visit(content);
+    return out;
+  }
+
   private closestIn<T extends Element>(content: HTMLElement, selector: string): T | null {
     const node = window.getSelection()?.anchorNode ?? null;
     const el = node instanceof Element ? node : node?.parentElement;
@@ -398,16 +592,118 @@ export class Editor {
     return range.toString() === '';
   }
 
-  private changed() {
-    this.fit();
-    this.host.onChange();
-    this.host.onSelection();
+  /** Run a DOM tidy-up that moves nodes about, then put the selection back
+   *  where it was. Moving a node otherwise drags the caret out of it. */
+  private keepingSelection(fn: (replaced: Map<Node, Node>) => void) {
+    const sel = window.getSelection();
+    const saved = sel && sel.rangeCount
+      ? { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset }
+      : null;
+    const replaced = new Map<Node, Node>();
+    fn(replaced);
+    if (!saved || !saved.an || !saved.fn) return;
+    const an = replaced.get(saved.an) ?? saved.an;
+    const fnode = replaced.get(saved.fn) ?? saved.fn;
+    if (!an.isConnected || !fnode.isConnected) return;
+    const clamp = (node: Node, offset: number) =>
+      Math.min(offset, node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '').length : node.childNodes.length);
+    try {
+      sel!.setBaseAndExtent(an, clamp(an, saved.ao), fnode, clamp(fnode, saved.fo));
+    } catch {
+      /* the selection could not be restored; leave it where it fell */
+    }
   }
 
-  // ---- formatting commands (toolbar and shortcuts) ---------------------------
+  /** Browsers express formatting in several ways and leave debris behind
+   *  when lines are joined. Bring a container back to the stored form:
+   *  no <font>, only TwoNote's style properties, and nothing that merely
+   *  restates what the text would look like anyway. */
+  private tidy(content: HTMLElement) {
+    if (!content.querySelector('font, [style]')) return;
+    this.keepingSelection((replaced) => {
+      for (const font of Array.from(content.querySelectorAll('font'))) {
+        const span = h('span');
+        const face = font.getAttribute('face');
+        const color = font.getAttribute('color');
+        const size = Number(font.getAttribute('size'));
+        if (face) span.style.fontFamily = face;
+        if (color) span.style.color = color;
+        if (size >= 1 && size <= 7) {
+          span.style.fontSize = `${size === 7 && this.pendingSize ? this.pendingSize : LEGACY_SIZES[size - 1]}pt`;
+        }
+        span.append(...Array.from(font.childNodes));
+        font.replaceWith(span);
+        replaced.set(font, span);
+      }
+      for (const el of Array.from(content.querySelectorAll<HTMLElement>('[style]'))) {
+        const parent = el.parentElement;
+        if (parent) {
+          // A value equal to the inherited one says nothing.
+          const own = getComputedStyle(el);
+          const inherited = getComputedStyle(parent);
+          if (el.style.fontSize && Math.abs(num(own.fontSize) - num(inherited.fontSize)) < 0.3) el.style.removeProperty('font-size');
+          if (el.style.color && own.color === inherited.color) el.style.removeProperty('color');
+          if (el.style.fontFamily && own.fontFamily === inherited.fontFamily) el.style.removeProperty('font-family');
+          if (el.style.textAlign && /^(left|start)$/.test(own.textAlign)) el.style.removeProperty('text-align');
+        }
+        const style = normaliseStyle(el.getAttribute('style') ?? '');
+        if (style) el.setAttribute('style', style);
+        else el.removeAttribute('style');
+      }
+      for (const span of Array.from(content.querySelectorAll('span'))) {
+        if (span.attributes.length) continue;
+        const first = span.firstChild;
+        span.replaceWith(...Array.from(span.childNodes));
+        if (first) replaced.set(span, first);
+      }
+    });
+  }
+
+  /** Remove one style property from everything the selection touches. */
+  private clearProperty(content: HTMLElement, property: string) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    this.keepingSelection((replaced) => {
+      for (const el of Array.from(content.querySelectorAll<HTMLElement>('[style], mark'))) {
+        if (!range.intersectsNode(el)) continue;
+        if (el.tagName === 'MARK') {
+          if (property !== 'background-color') continue;
+          const first = el.firstChild;
+          el.replaceWith(...Array.from(el.childNodes));
+          if (first) replaced.set(el, first);
+        } else {
+          el.style.removeProperty(property);
+        }
+      }
+    });
+  }
+
+  private withCss<T>(fn: () => T): T {
+    document.execCommand('styleWithCSS', false, 'true');
+    try {
+      return fn();
+    } finally {
+      document.execCommand('styleWithCSS', false, 'false');
+    }
+  }
+
+  /** The nearest explicitly set value of a style property at the caret. */
+  private explicit(content: HTMLElement, property: 'fontFamily' | 'color' | 'backgroundColor'): string {
+    const node = window.getSelection()?.anchorNode ?? null;
+    let el: HTMLElement | null = node instanceof HTMLElement ? node : (node?.parentElement ?? null);
+    for (; el && el !== content; el = el.parentElement) {
+      if (el.style[property]) return el.style[property];
+      if (property === 'backgroundColor' && el.tagName === 'MARK') return getComputedStyle(el).backgroundColor;
+    }
+    return '';
+  }
+
+  // ---- formatting commands (ribbon and shortcuts) ----------------------------
 
   formatState(): FormatState | null {
-    if (!this.currentContent()) return null;
+    const content = this.currentContent();
+    if (!content) return null;
     const q = (c: string) => {
       try {
         return document.queryCommandState(c);
@@ -415,77 +711,139 @@ export class Editor {
         return false;
       }
     };
+    const node = window.getSelection()?.anchorNode ?? null;
+    const at = node instanceof Element ? node : (node?.parentElement ?? content);
+    const line = at.closest<HTMLElement>('pre, h1, h2, h3, h4, h5, h6, li, div, p') ?? content;
+    const classes = line === content ? null : line.classList;
+    const computed = getComputedStyle(at);
+    let style: ParagraphStyle = 'div';
+    if (at.closest('pre')) style = 'code';
+    else if (/^H[1-6]$/.test(line.tagName)) style = line.tagName.toLowerCase() as ParagraphStyle;
+    else if (classes?.contains('quote')) style = 'quote';
+    else if (classes?.contains('cite')) style = 'cite';
+    const align = /^(center|right|justify)$/.test(computed.textAlign) ? (computed.textAlign as Alignment) : 'left';
     return {
       bold: q('bold'),
       italic: q('italic'),
       underline: q('underline'),
       strikeThrough: q('strikeThrough'),
+      subscript: q('subscript'),
+      superscript: q('superscript'),
       insertUnorderedList: q('insertUnorderedList'),
       insertOrderedList: q('insertOrderedList'),
+      font: firstFont(this.explicit(content, 'fontFamily')),
+      size: Math.round(num(computed.fontSize) * 0.75 * 2) / 2,
+      align,
+      style,
+      todo: !!classes?.contains('todo'),
+      tag: NOTE_TAGS.find((t) => classes?.contains(`tag-${t}`)) ?? null,
     };
   }
 
-  exec(command: InlineCommand | 'removeFormat') {
-    this.ensureFocus();
-    document.execCommand(command);
-    this.changed();
-  }
-
-  heading(tag: 'h1' | 'h2' | 'h3' | 'div') {
-    this.ensureFocus();
-    document.execCommand('formatBlock', false, `<${tag}>`);
-    this.changed();
-  }
-
-  highlight() {
+  exec(command: Command) {
     const content = this.ensureFocus();
-    const mark = this.closestIn<HTMLElement>(content, 'mark');
-    if (mark && window.getSelection()?.isCollapsed) {
-      mark.replaceWith(...Array.from(mark.childNodes));
-    } else {
-      if (!document.execCommand('hiliteColor', false, HIGHLIGHT)) {
-        document.execCommand('backColor', false, HIGHLIGHT);
-      }
-      this.tidy(content);
-    }
-    this.changed();
+    document.execCommand(command);
+    this.tidy(content);
+    this.changed(true);
   }
 
-  /** Browsers express highlight (and sometimes other formatting) as inline
-   *  styles. Stored notes carry no styles, so translate what we mean to keep
-   *  and drop the rest. */
-  private tidy(content: HTMLElement) {
-    for (const el of Array.from(content.querySelectorAll<HTMLElement>('[style], font'))) {
-      const wrapper = /^(SPAN|FONT)$/.test(el.tagName);
-      let inner: HTMLElement | null = null;
-      if (el.style.backgroundColor && el.tagName !== 'MARK') {
-        inner = h('mark');
-        inner.append(...Array.from(el.childNodes));
-      }
-      if (wrapper) {
-        el.replaceWith(...(inner ? [inner] : Array.from(el.childNodes)));
-      } else {
-        // The browser put the colour on an existing element, such as <b>.
-        el.removeAttribute('style');
-        if (inner) el.append(inner);
-      }
+  setStyle(style: ParagraphStyle) {
+    const content = this.ensureFocus();
+    const tag = /^h[1-6]$/.test(style) ? style : style === 'code' ? 'pre' : 'div';
+    document.execCommand('formatBlock', false, `<${tag}>`);
+    for (const line of this.selectedLines(content)) {
+      line.classList.remove('quote', 'cite');
+      if (style === 'quote' || style === 'cite') line.classList.add(style);
+      cleanClass(line);
     }
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  /** Set the font, or pass null to go back to the default. */
+  setFont(name: string | null) {
+    const content = this.ensureFocus();
+    if (name === null) this.clearProperty(content, 'font-family');
+    else this.withCss(() => document.execCommand('fontName', false, name));
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  setFontSize(points: number) {
+    const content = this.ensureFocus();
+    // The browser only knows sizes 1 to 7. Ask for 7, then rewrite what it
+    // produced (now or as typing starts) with the size actually wanted.
+    this.pendingSize = points;
+    document.execCommand('fontSize', false, '7');
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  /** Colour the text, or pass null for the automatic colour. */
+  setColor(color: string | null) {
+    const content = this.ensureFocus();
+    if (color === null) this.clearProperty(content, 'color');
+    else {
+      this.fontColor = color;
+      this.withCss(() => document.execCommand('foreColor', false, color));
+    }
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  /** Highlight the text, or pass null to remove highlighting. */
+  setHighlight(color: string | null) {
+    const content = this.ensureFocus();
+    if (color === null) this.clearProperty(content, 'background-color');
+    else {
+      this.highlightColor = color;
+      this.withCss(() => {
+        if (!document.execCommand('hiliteColor', false, color)) document.execCommand('backColor', false, color);
+      });
+    }
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  /** The highlight button and shortcut: on, or off if the caret is already
+   *  inside that highlight. */
+  toggleHighlight() {
+    const content = this.ensureFocus();
+    const here = normaliseColour(this.explicit(content, 'backgroundColor'));
+    this.setHighlight(here && window.getSelection()?.isCollapsed ? null : this.highlightColor);
+  }
+
+  align(direction: Alignment) {
+    const content = this.ensureFocus();
+    const command = { left: 'justifyLeft', center: 'justifyCenter', right: 'justifyRight', justify: 'justifyFull' }[direction];
+    this.withCss(() => document.execCommand(command));
+    this.tidy(content);
+    this.changed(true);
   }
 
   toggleTodo() {
     const content = this.ensureFocus();
-    let target: HTMLElement | null =
-      this.closestIn<HTMLElement>(content, 'li') ?? this.lineBlock(content);
-    if (target && !/^(DIV|P|LI)$/.test(target.tagName)) {
-      if (/^(TABLE|UL|OL)$/.test(target.tagName)) return;
-      document.execCommand('formatBlock', false, '<div>');
-      target = this.lineBlock(content);
+    const lines = this.selectedLines(content);
+    const on = !lines.every((l) => l.classList.contains('todo'));
+    for (const line of lines) {
+      line.classList.remove('todo', 'done', ...NOTE_TAGS.map((t) => `tag-${t}`));
+      if (on) line.classList.add('todo');
+      cleanClass(line);
     }
-    if (!target) return;
-    if (target.classList.contains('todo')) target.classList.remove('todo', 'done');
-    else target.classList.add('todo');
-    if (!target.getAttribute('class')) target.removeAttribute('class');
-    this.changed();
+    this.changed(true);
+  }
+
+  /** Tag the selected paragraphs, or pass null to remove their tags. */
+  setTag(tag: NoteTag | null) {
+    const content = this.ensureFocus();
+    const lines = this.selectedLines(content);
+    const on = tag !== null && !lines.every((l) => l.classList.contains(`tag-${tag}`));
+    for (const line of lines) {
+      line.classList.remove('todo', 'done', ...NOTE_TAGS.map((t) => `tag-${t}`));
+      if (on) line.classList.add(`tag-${tag}`);
+      cleanClass(line);
+    }
+    this.changed(true);
   }
 
   insertTable(rows = 3, columns = 3) {
@@ -501,7 +859,7 @@ export class Editor {
       target.removeAttribute('id');
       caretIn(target);
     }
-    this.changed();
+    this.changed(true);
   }
 
   /** Returns false if the address is not one TwoNote will link to. */
@@ -514,8 +872,20 @@ export class Editor {
     } else {
       document.execCommand('createLink', false, url);
     }
-    this.changed();
+    this.changed(true);
     return true;
+  }
+
+  insertText(text: string) {
+    this.ensureFocus();
+    document.execCommand('insertText', false, text);
+    this.changed(true);
+  }
+
+  insertRule() {
+    this.ensureFocus();
+    document.execCommand('insertHTML', false, '<hr><div><br></div>');
+    this.changed(true);
   }
 
   async insertImages(files: Iterable<Blob>, at?: { x: number; y: number }) {
@@ -537,26 +907,207 @@ export class Editor {
         });
         this.select(el);
         spot = { x: spot.x, y: spot.y + size.h * scale + 12 };
-        this.changed();
+        this.changed(true);
       } catch (err) {
         this.host.notify(err instanceof Error ? err.message : String(err));
       }
     }
   }
 
+  // ---- clipboard and format painter ------------------------------------------
+
+  cut() {
+    if (this.currentContent() && document.execCommand('cut')) this.changed(true);
+  }
+
+  copy() {
+    if (this.currentContent()) document.execCommand('copy');
+  }
+
+  /** Paste plain text. Reading the clipboard from a button needs permission
+   *  the web view may not grant; Ctrl+V always works. */
+  async paste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) this.insertText(text);
+    } catch {
+      this.host.notify('Press Ctrl+V to paste.');
+    }
+  }
+
+  get painting() {
+    return this.paint !== null;
+  }
+
+  /** Pick up the formatting at the caret; the next selection made with the
+   *  mouse receives it. Calling again cancels. */
+  toggleFormatPainter() {
+    const content = this.currentContent();
+    const state = this.formatState();
+    if (this.paint || !content || !state) {
+      this.paint = null;
+    } else {
+      this.paint = {
+        toggles: INLINE_TOGGLES.filter((t) => state[t]),
+        font: state.font,
+        size: state.style === 'div' && Math.abs(state.size - 11) > 0.01 ? state.size : null,
+        color: normaliseColour(this.explicit(content, 'color')),
+        highlight: normaliseColour(this.explicit(content, 'backgroundColor')),
+      };
+    }
+    this.canvas.classList.toggle('painting', this.paint !== null);
+    this.host.onSelection();
+  }
+
+  private applyPaint() {
+    const paint = this.paint;
+    const content = this.currentContent();
+    if (!paint || !content || window.getSelection()?.isCollapsed) return;
+    this.paint = null;
+    this.canvas.classList.remove('painting');
+    document.execCommand('removeFormat');
+    for (const toggle of paint.toggles) document.execCommand(toggle);
+    if (paint.font) this.withCss(() => document.execCommand('fontName', false, paint.font));
+    if (paint.size) {
+      this.pendingSize = paint.size;
+      document.execCommand('fontSize', false, '7');
+    }
+    if (paint.color) this.withCss(() => document.execCommand('foreColor', false, paint.color!));
+    if (paint.highlight) this.withCss(() => document.execCommand('hiliteColor', false, paint.highlight!));
+    this.tidy(content);
+    this.changed(true);
+  }
+
+  // ---- drawing ---------------------------------------------------------------
+
+  get currentTool(): Tool {
+    return this.tool;
+  }
+
+  setTool(tool: Tool) {
+    this.tool = tool;
+    this.lastInk = null;
+    this.canvas.classList.toggle('tool-draw', tool.kind === 'pen' || tool.kind === 'shape');
+    this.canvas.classList.toggle('tool-erase', tool.kind === 'eraser');
+    if (tool.kind !== 'type') {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      this.select(null);
+    }
+    this.host.onSelection();
+  }
+
+  /** Follow the pointer until it lifts, drawing a stroke or shape. */
+  private draw(e: PointerEvent, tool: Extract<Tool, { kind: 'pen' | 'shape' }>) {
+    e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    this.canvas.setPointerCapture(e.pointerId);
+    const start = this.point(e);
+    let points: Point[] = [start];
+    let end = start;
+    const opacity = tool.kind === 'pen' ? tool.opacity : 1;
+
+    const live = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    live.setAttribute('class', 'ink-live');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('stroke', tool.color);
+    path.setAttribute('stroke-width', String(tool.width));
+    path.setAttribute('stroke-opacity', String(opacity));
+    path.setAttribute('d', pathData(points));
+    live.append(path);
+    this.canvas.append(live);
+
+    const onMove = (ev: PointerEvent) => {
+      for (const c of ev.getCoalescedEvents?.() ?? [ev]) {
+        const p = this.point(c);
+        const last = points[points.length - 1];
+        if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 1.2) points.push(p);
+        end = p;
+      }
+      path.setAttribute('d', pathData(tool.kind === 'shape' ? shapePoints(tool.shape, start, end) : points));
+    };
+    const onUp = () => {
+      this.canvas.removeEventListener('pointermove', onMove);
+      this.canvas.removeEventListener('pointerup', onUp);
+      this.canvas.removeEventListener('pointercancel', onUp);
+      live.remove();
+      if (tool.kind === 'shape') {
+        if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 4) return;
+        points = shapePoints(tool.shape, start, end);
+      }
+      const stroke: Stroke = { points, color: tool.color, width: tool.width };
+      if (opacity < 1) stroke.opacity = opacity;
+      this.commitStroke(stroke, tool.kind === 'pen');
+    };
+    this.canvas.addEventListener('pointermove', onMove);
+    this.canvas.addEventListener('pointerup', onUp);
+    this.canvas.addEventListener('pointercancel', onUp);
+  }
+
+  /** Add a finished stroke to the page. Pen strokes made in quick succession
+   *  join one drawing, so a written word moves and deletes as a unit. */
+  private commitStroke(stroke: Stroke, mayJoin: boolean) {
+    const now = performance.now();
+    const previous = this.lastInk;
+    const data = previous && this.inkData.get(previous.el);
+    if (mayJoin && previous && data && previous.el.isConnected && now - previous.time < INK_GROUP_MS) {
+      const here = { ...data, x: num(previous.el.style.left), y: num(previous.el.style.top) };
+      const merged = blockFromAbsolute(data.id, [...absoluteStrokes(here), stroke]);
+      previous.el.remove();
+      this.lastInk = { el: this.addInk(merged), time: now };
+    } else {
+      const el = this.addInk(blockFromAbsolute(crypto.randomUUID(), [stroke]));
+      this.lastInk = mayJoin ? { el, time: now } : null;
+    }
+    this.changed(true);
+  }
+
+  /** Rub out whole strokes under the pointer until it lifts. */
+  private erase(e: PointerEvent) {
+    e.preventDefault();
+    this.canvas.setPointerCapture(e.pointerId);
+    let erased = false;
+    const at = (ev: PointerEvent) => {
+      for (const hit of document.elementsFromPoint(ev.clientX, ev.clientY)) {
+        if (!hit.classList.contains('hit') || !this.canvas.contains(hit)) continue;
+        const group = hit.parentElement as unknown as SVGGElement;
+        const el = hit.closest<HTMLElement>('.block.ink');
+        const data = el && this.inkData.get(el);
+        if (!el || !data) continue;
+        data.strokes.splice(Number(group.dataset.i), 1);
+        if (data.strokes.length) el.replaceChildren(inkSvg(data.strokes));
+        else el.remove();
+        erased = true;
+      }
+    };
+    at(e);
+    const onUp = () => {
+      this.canvas.removeEventListener('pointermove', at);
+      this.canvas.removeEventListener('pointerup', onUp);
+      this.canvas.removeEventListener('pointercancel', onUp);
+      if (erased) this.changed(true);
+    };
+    this.canvas.addEventListener('pointermove', at);
+    this.canvas.addEventListener('pointerup', onUp);
+    this.canvas.addEventListener('pointercancel', onUp);
+  }
+
   // ---- events ----------------------------------------------------------------
 
   private onCanvasPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
-    if (!(e.target as Element).closest('.block.image')) this.select(null);
+    const tool = this.tool;
+    if (tool.kind === 'pen' || tool.kind === 'shape') return this.draw(e, tool);
+    if (tool.kind === 'eraser') return this.erase(e);
+    if (!(e.target as Element).closest('.block.image, .block.ink')) this.select(null);
     if (e.target !== this.canvas) return;
     // Clicking empty space starts a new note right there.
     e.preventDefault();
+    const [x, y] = this.point(e);
     const el = this.addText({
       kind: 'text',
       id: crypto.randomUUID(),
-      x: Math.max(0, e.offsetX - 10),
-      y: Math.max(0, e.offsetY - 14),
+      x: Math.max(0, x - 10),
+      y: Math.max(0, y - 14),
       w: DEFAULT_WIDTH,
       html: '',
     });
@@ -578,9 +1129,18 @@ export class Editor {
 
   private onInput(e: InputEvent) {
     const content = this.currentContent();
-    if (content && e.inputType === 'insertParagraph') {
-      // A new line after a ticked to-do starts unticked.
-      this.closestIn<HTMLElement>(content, '.todo.done')?.classList.remove('done');
+    if (content) {
+      if (e.inputType === 'insertParagraph') {
+        // A new line after a ticked to-do starts unticked, and a tag stays
+        // with the paragraph it was put on.
+        this.closestIn<HTMLElement>(content, '.todo.done')?.classList.remove('done');
+        const tagged = this.closestIn<HTMLElement>(content, '[class*="tag-"]');
+        if (tagged) {
+          tagged.classList.remove(...NOTE_TAGS.map((t) => `tag-${t}`));
+          cleanClass(tagged);
+        }
+      }
+      this.tidy(content);
     }
     this.changed();
   }
@@ -595,9 +1155,9 @@ export class Editor {
       return;
     }
     const todo = target.closest<HTMLElement>('.todo');
-    if (todo && e.clientX - todo.getBoundingClientRect().left < TODO_GUTTER) {
+    if (todo && (e.clientX - todo.getBoundingClientRect().left) / this.scale < TODO_GUTTER) {
       todo.classList.toggle('done');
-      this.changed();
+      this.changed(true);
     }
   }
 
@@ -612,7 +1172,7 @@ export class Editor {
       if (cell) this.moveCell(cell, e.shiftKey);
       else if (this.closestIn(content, 'li')) document.execCommand(e.shiftKey ? 'outdent' : 'indent');
       else if (!e.shiftKey) this.lineToTable(content);
-      this.changed();
+      this.changed(true);
       return;
     }
 
@@ -622,36 +1182,54 @@ export class Editor {
       if (todo && ((e.key === 'Backspace' && this.caretAtStart(todo)) || (e.key === 'Enter' && emptyLine))) {
         e.preventDefault();
         todo.classList.remove('todo', 'done');
-        if (!todo.getAttribute('class')) todo.removeAttribute('class');
-        this.changed();
+        cleanClass(todo);
+        this.changed(true);
         return;
       }
     }
 
-    if (!mod) return;
-    const key = e.key.toLowerCase();
     const run = (fn: () => void) => {
       e.preventDefault();
       fn();
     };
-    if (e.altKey && ['1', '2', '3'].includes(e.key)) run(() => this.heading(`h${e.key}` as 'h1'));
-    else if (e.shiftKey && key === 'n') run(() => this.heading('div'));
-    else if ((e.altKey || e.shiftKey) && key === 'h') run(() => this.highlight());
+    if (e.altKey && e.shiftKey && !mod) {
+      if (e.key === 'ArrowRight') run(() => this.exec('indent'));
+      else if (e.key === 'ArrowLeft') run(() => this.exec('outdent'));
+      return;
+    }
+    if (!mod) return;
+    const key = e.key.toLowerCase();
+    if (e.altKey && /^[1-6]$/.test(e.key)) run(() => this.setStyle(`h${e.key}` as ParagraphStyle));
+    else if (e.shiftKey && key === 'n') run(() => this.setStyle('div'));
+    else if ((e.altKey || e.shiftKey) && key === 'h') run(() => this.toggleHighlight());
     else if (e.key === '.') run(() => this.exec('insertUnorderedList'));
     else if (e.key === '/') run(() => this.exec('insertOrderedList'));
     else if (e.key === '1' && !e.altKey) run(() => this.toggleTodo());
+    else if (e.key === '2' && !e.altKey) run(() => this.setTag('important'));
+    else if (e.key === '3' && !e.altKey) run(() => this.setTag('question'));
+    else if (e.key === '4' && !e.altKey) run(() => this.setTag('remember'));
+    else if (e.key === '5' && !e.altKey) run(() => this.setTag('definition'));
+    else if (e.key === '0' && !e.altKey) run(() => this.setTag(null));
     else if (e.key === '-' && !e.shiftKey) run(() => this.exec('strikeThrough'));
+    else if (e.key === '=' && !e.shiftKey) run(() => this.exec('subscript'));
+    else if ((e.key === '+' || e.key === '=') && e.shiftKey) run(() => this.exec('superscript'));
+    else if (key === 'l' && !e.shiftKey && !e.altKey) run(() => this.align('left'));
+    else if (key === 'r' && !e.shiftKey && !e.altKey) run(() => this.align('right'));
   }
 
   private onDocumentKeyDown(e: KeyboardEvent) {
-    if (!this.selectedImage) return;
+    if (e.key === 'Escape') {
+      if (this.paint) this.toggleFormatPainter();
+      if (this.tool.kind !== 'type') this.setTool({ kind: 'type' });
+    }
+    if (!this.selected) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
-      this.selectedImage.remove();
-      this.selectedImage = null;
-      this.changed();
+      this.selected.remove();
+      this.selected = null;
+      this.changed(true);
     } else if (e.key === 'Escape') {
       this.select(null);
     }
@@ -677,15 +1255,15 @@ export class Editor {
     if (html) document.execCommand('insertHTML', false, sanitizeHtml(html));
     else document.execCommand('insertText', false, data.getData('text/plain'));
     if (content) this.hydrate(content);
-    this.changed();
+    this.changed(true);
   }
 
   private onDrop(e: DragEvent) {
     const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
     if (!files.length) return;
     e.preventDefault();
-    const box = this.canvas.getBoundingClientRect();
-    void this.insertImages(files, { x: Math.max(0, e.clientX - box.left), y: Math.max(0, e.clientY - box.top) });
+    const [x, y] = this.point(e);
+    void this.insertImages(files, { x: Math.max(0, x), y: Math.max(0, y) });
   }
 
   // ---- tables ----------------------------------------------------------------
@@ -714,7 +1292,7 @@ export class Editor {
   /** OneNote's shortcut: Tab at the end of a line turns it into a table. */
   private lineToTable(content: HTMLElement) {
     const line = this.lineBlock(content);
-    if (!line || /^(TABLE|UL|OL)$/.test(line.tagName)) return;
+    if (!line || /^(TABLE|UL|OL|HR)$/.test(line.tagName)) return;
     const first = h('td');
     first.append(...Array.from(line.childNodes));
     if (!first.firstChild) first.append(h('br'));
@@ -744,7 +1322,7 @@ export class Editor {
     const index = cell.cellIndex;
     const apply = (fn: () => void) => () => {
       fn();
-      this.changed();
+      this.changed(true);
     };
     const addColumn = (offset: number) => {
       for (const r of rows) {

@@ -15,8 +15,20 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 
 export type MenuItem =
   | 'separator'
-  | { label: string; onSelect: () => void; checked?: boolean; danger?: boolean; disabled?: boolean; hint?: string }
-  | { swatches: string[]; current?: string; onPick: (color: string) => void };
+  | { heading: string }
+  | {
+      label: string;
+      onSelect: () => void;
+      checked?: boolean;
+      danger?: boolean;
+      disabled?: boolean;
+      hint?: string;
+      /** Show the label in this font, for font pickers. */
+      font?: string;
+      /** A class for the label, for style previews. */
+      preview?: string;
+    }
+  | { swatches: string[]; current?: string | null; onPick: (color: string) => void };
 
 let openMenu: HTMLElement | null = null;
 
@@ -34,6 +46,8 @@ export function showMenu(x: number, y: number, items: MenuItem[]) {
   for (const item of items) {
     if (item === 'separator') {
       menu.append(h('div', 'menu-sep'));
+    } else if ('heading' in item) {
+      menu.append(h('div', 'menu-heading', item.heading));
     } else if ('swatches' in item) {
       const row = h('div', 'menu-swatches');
       for (const color of item.swatches) {
@@ -53,7 +67,9 @@ export function showMenu(x: number, y: number, items: MenuItem[]) {
       b.type = 'button';
       b.setAttribute('role', 'menuitem');
       b.disabled = !!item.disabled;
-      b.append(h('span', 'menu-check', item.checked ? '✓' : ''), h('span', 'menu-label', item.label));
+      const label = h('span', 'menu-label' + (item.preview ? ` ${item.preview}` : ''), item.label);
+      if (item.font) label.style.fontFamily = item.font;
+      b.append(h('span', 'menu-check', item.checked ? '✓' : ''), label);
       if (item.hint) b.append(h('span', 'menu-hint', item.hint));
       b.addEventListener('click', () => {
         closeMenu();
@@ -62,6 +78,19 @@ export function showMenu(x: number, y: number, items: MenuItem[]) {
       menu.append(b);
     }
   }
+  place(menu, x, y);
+}
+
+/** Show any element as a floating panel, with the same behaviour as a menu:
+ *  it never takes focus and closes on an outside click or Escape. */
+export function showPanel(x: number, y: number, content: HTMLElement) {
+  closeMenu();
+  const panel = h('div', 'menu panel');
+  panel.append(content);
+  place(panel, x, y);
+}
+
+function place(menu: HTMLElement, x: number, y: number) {
   menu.addEventListener('mousedown', (e) => e.preventDefault());
   menu.addEventListener('contextmenu', (e) => e.preventDefault());
   document.body.append(menu);
@@ -161,6 +190,29 @@ export function infoDialog(title: string, lines: string[]): Promise<void> {
     ok.addEventListener('click', () => done());
     row.append(ok);
     box.append(row);
+    return ok;
+  }, undefined);
+}
+
+/** A two-column reference table with a single button. */
+export function tableDialog(title: string, rows: [string, string][]): Promise<void> {
+  return dialog<void>((box, done) => {
+    box.classList.add('wide');
+    box.append(h('h2', 'dialog-title', title));
+    const table = h('table', 'dialog-table');
+    for (const [what, how] of rows) {
+      const tr = h('tr');
+      tr.append(h('td', '', what), h('td', 'keys', how));
+      table.append(tr);
+    }
+    const scroll = h('div', 'dialog-scroll');
+    scroll.append(table);
+    const row = h('div', 'dialog-buttons');
+    const ok = h('button', 'btn primary', 'OK');
+    ok.type = 'button';
+    ok.addEventListener('click', () => done());
+    row.append(ok);
+    box.append(scroll, row);
     return ok;
   }, undefined);
 }

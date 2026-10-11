@@ -33,14 +33,15 @@ fn main() -> ExitCode {
             println!("section  {} ({} pages)", section.title, section.pages);
         }
         println!(
-            "imported {} sections, {} pages, {} pictures",
+            "imported {} sections, {} pages, {} pictures, {} drawings",
             summary.sections.len(),
             summary.pages,
-            summary.pictures
+            summary.pictures,
+            summary.drawings
         );
         let s = summary.skipped;
         println!(
-            "skipped  {} ink drawings, {} attached files, {} pictures, {} other items",
+            "skipped  {} pieces of inline handwriting, {} attached files, {} pictures, {} other items",
             s.ink, s.files, s.pictures, s.other
         );
         for warning in &summary.warnings {

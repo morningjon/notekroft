@@ -1,0 +1,117 @@
+name: Build
+
+# Tests the code and builds installable apps for macOS, Windows and Linux.
+# Runs on every push to main, on pull requests, on version tags, and on demand
+# from the Actions tab. The apps are attached to each run as artifacts.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LINUX_DEPS: >-
+    libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
+    libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Core tests
+        run: cargo test -p twonote-core
+      - name: Build the interface
+        run: npm run build
+      - name: Interface tests
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:ui
+      - name: Keep interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-test-screenshots
+          path: tests/out/
+          if-no-files-found: ignore
+
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            # One app that runs on both Apple silicon and Intel Macs.
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+            bundle-dir: target/universal-apple-darwin/release/bundle
+          - name: Windows
+            os: windows-latest
+            rust-targets: ''
+            args: ''
+            bundle-dir: target/release/bundle
+          - name: Linux
+            os: ubuntu-22.04
+            rust-targets: ''
+            args: ''
+            bundle-dir: target/release/bundle
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+      - run: npm ci
+      - name: Core tests
+        run: cargo test -p twonote-core
+      - name: Build the app
+        run: npm run tauri build -- ${{ matrix.args }}
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: TwoNote-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            ${{ matrix.bundle-dir }}/dmg/*.dmg
+            ${{ matrix.bundle-dir }}/nsis/*.exe
+            ${{ matrix.bundle-dir }}/msi/*.msi
+            ${{ matrix.bundle-dir }}/deb/*.deb
+            ${{ matrix.bundle-dir }}/rpm/*.rpm
+            ${{ matrix.bundle-dir }}/appimage/*.AppImage

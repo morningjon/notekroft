@@ -18,12 +18,14 @@ then to an installable package.
 | --- | --- |
 | Linux, x86-64 (Ubuntu 24.04) | Built, packaged as `.deb`, launched and saving notes |
 | Other Linux distributions | Expected to work; package names below come from Tauri's documentation |
-| macOS | Not yet tested |
-| Windows | Not yet tested |
+| macOS (universal: Apple silicon and Intel) | Builds and packages on GitHub's runners; not yet run by hand |
+| Windows, x86-64 | Builds and packages on GitHub's runners; not yet run by hand |
 
-TwoNote uses nothing platform-specific beyond what Tauri provides, so macOS
-and Windows builds should work, but nobody has confirmed it. If you try one,
-please open an issue with the result either way.
+Every push is built for all three platforms by the workflow in
+`.github/workflows/build.yml`, and the resulting apps are attached to each
+run under the repository's Actions tab. So the macOS and Windows builds are
+known to compile and package, but nobody has yet confirmed how they behave in
+use. If you try one, please open an issue with the result either way.
 
 ## 1. Install the prerequisites
 

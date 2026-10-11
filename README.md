@@ -57,8 +57,13 @@ npm run tauri build    # produce an installable package
 packages to install, packaging options and troubleshooting, are in
 [docs/BUILDING.md](docs/BUILDING.md).**
 
-So far TwoNote has been built and run on Linux only. macOS and Windows should
-work but are untested; reports are welcome.
+Prefer not to build it yourself? Every push is built for macOS, Windows and
+Linux; the apps are attached to each run under the
+[Actions tab](https://github.com/morningjon/twonote/actions/workflows/build.yml)
+(a free GitHub account is needed to download them).
+
+So far TwoNote has been run by hand on Linux only. The macOS and Windows apps
+build and package successfully but are untested in use; reports are welcome.
 
 To try the interface in a browser without building any Rust, run
 `npm run dev` and open http://localhost:1420. In that mode notes are kept in

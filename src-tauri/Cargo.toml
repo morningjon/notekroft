@@ -8,7 +8,8 @@ repository.workspace = true
 
 [lib]
 name = "notekroft_lib"
-crate-type = ["rlib"]
+# Android and iOS load the app as a library; the desktop binary links the rlib.
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

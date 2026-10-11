@@ -21,6 +21,9 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 const el = {
   tabs: $('tabs'),
+  nav: $('nav'),
+  navToggle: $<HTMLButtonElement>('nav-toggle'),
+  navBackdrop: $('nav-backdrop'),
   ribbon: $('ribbon'),
   search: $<HTMLInputElement>('search'),
   searchBox: $('search-box'),
@@ -48,6 +51,31 @@ const state = {
   sectionId: null as string | null,
   page: null as Page | null,
 };
+
+/** True on a phone or tablet build; set once the backend has been asked. */
+let mobile = false;
+
+// On a narrow screen the notebook, section and page lists slide in as a
+// drawer over the page instead of sitting beside it.
+const narrowScreen = window.matchMedia('(max-width: 760px)');
+
+function setDrawer(open: boolean) {
+  el.nav.classList.toggle('open', open);
+  el.navBackdrop.hidden = !open;
+  el.navToggle.setAttribute('aria-expanded', String(open));
+}
+
+el.navToggle.addEventListener('click', () => setDrawer(!el.nav.classList.contains('open')));
+el.navBackdrop.addEventListener('click', () => setDrawer(false));
+
+/** Search lives in the top bar on a wide screen and in the drawer on a
+ *  narrow one, where the top bar has no room for it. */
+function placeSearch() {
+  if (narrowScreen.matches) el.nav.prepend(el.searchBox);
+  else document.querySelector('.tabs-row')!.append(el.searchBox);
+  if (!narrowScreen.matches) setDrawer(false);
+}
+narrowScreen.addEventListener('change', placeSearch);
 
 /** Last page viewed in each section, so switching sections returns to it. */
 const lastPage = new Map<string, string>();
@@ -211,8 +239,9 @@ function changePage(change: Partial<Pick<Page, 'rules' | 'color'>>) {
 function notebookActions(): MenuItem[] {
   const items: MenuItem[] = [{ label: 'New notebook…', onSelect: () => act(addNotebook) }];
   if (state.nb) {
+    // Importing reads files from a computer; the phone build cannot yet.
+    if (!mobile) items.push({ label: 'Import from OneNote…', onSelect: () => act(importOneNote) });
     items.push(
-      { label: 'Import from OneNote…', onSelect: () => act(importOneNote) },
       'separator',
       { label: 'Rename this notebook…', onSelect: () => act(renameNotebook) },
       { label: 'Delete this notebook…', danger: true, onSelect: () => act(deleteNotebook) },
@@ -227,6 +256,13 @@ const megabytes = (bytes: number) =>
 /** Show where notes are kept, and offer to move them or use another folder. */
 async function notesFolder() {
   const info = await backend.libraryInfo();
+  if (info.mobile) {
+    await infoDialog('Where your notes are', [
+      'On this device your notes are kept in NoteKroft\'s own private storage. Other apps cannot read them.',
+      'They are removed if you uninstall NoteKroft or clear its storage, so keep anything important on a computer too until export and sync are added.',
+    ]);
+    return;
+  }
   if (info.locked) {
     await infoDialog('Notes folder', [
       'Your notes are kept in:',
@@ -480,7 +516,10 @@ function renderPages() {
       const label = h('span', 'label');
       setPageLabel(label, entry.title);
       li.append(label);
-      li.addEventListener('click', () => act(() => openPage(entry.id)));
+      li.addEventListener('click', () => act(async () => {
+        await openPage(entry.id);
+        setDrawer(false);
+      }));
       li.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') act(() => openPage(entry.id));
       });
@@ -835,6 +874,7 @@ function renderResults(query: string) {
 
 async function gotoHit(hit: SearchHit) {
   hideResults();
+  setDrawer(false);
   el.search.value = '';
   el.search.blur();
   if (state.nb?.id !== hit.notebookId) await openNotebook(hit.notebookId, hit.sectionId, hit.pageId);
@@ -962,15 +1002,19 @@ async function firstRun(): Promise<string> {
   const page = await backend.createPage(nb.id, sec.id, 'Welcome to NoteKroft');
   await backend.savePage(nb.id, sec.id, {
     ...page,
-    blocks: [{ kind: 'text', id: crypto.randomUUID(), x: 0, y: 0, w: 520, html: WELCOME }],
+    blocks: [{ kind: 'text', id: crypto.randomUUID(), x: 0, y: 0, w: Math.max(180, Math.min(520, window.innerWidth - 24)), html: WELCOME }],
   });
   return nb.id;
 }
 
 async function start() {
   const library = await backend.libraryInfo();
-  el.libPath.textContent = library.path;
-  if (backend.desktop) {
+  mobile = library.mobile;
+  document.documentElement.classList.toggle('mobile', mobile);
+  el.libPath.textContent = mobile ? 'Notes are kept on this device' : library.path;
+  if (mobile) {
+    el.libPath.addEventListener('click', () => act(notesFolder));
+  } else if (backend.desktop) {
     el.libPath.title = 'Where your notes are kept. Click to show, move or change the folder.';
     el.libPath.addEventListener('click', () => act(notesFolder));
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -994,5 +1038,6 @@ async function start() {
   if (library.notice) await infoDialog('Notes folder not found', library.notice.split('\n').filter(Boolean));
 }
 
+placeSearch();
 showEmpty();
 act(start);

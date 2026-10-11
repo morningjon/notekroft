@@ -84,6 +84,30 @@ overrides the folder for that run.
 The layout is documented in [docs/FORMAT.md](docs/FORMAT.md). It is designed
 to be readable without NoteKroft.
 
+## On Android
+
+There is an Android build (an APK, for Android 7 and later) with the same
+editor, ribbon and drawing tools, laid out for a narrow screen: the notebook,
+section and page lists open from the button at the top left.
+
+It is earlier-stage than the desktop app:
+
+- Notes are kept in the app's own private storage. They cannot be moved to
+  another folder yet, there is no sync with a computer, and **uninstalling
+  the app deletes them**.
+- Importing from OneNote is desktop-only.
+- Reordering sections and pages by dragging does not work by touch.
+- Pages laid out on a wide desktop screen are not rearranged for a phone;
+  scroll sideways to see the rest.
+- It is checked automatically on an emulated phone, but has not yet been
+  used on a real one.
+
+To install it, download `NoteKroft-Android` from the latest run under the
+[Actions tab](https://github.com/morningjon/notekroft/actions/workflows/build.yml),
+unzip it, and open the `.apk` on the phone. Android will ask you to allow
+installing from that source. Alpha builds are signed with a public test key;
+[src-tauri/android/README.md](src-tauri/android/README.md) explains why.
+
 ## Building and running
 
 You need Rust 1.90+, Node.js 20.19+ and Tauri's system libraries. Then:
@@ -100,8 +124,8 @@ npm run tauri build    # produce an installable package
 packages to install, packaging options and troubleshooting, are in
 [docs/BUILDING.md](docs/BUILDING.md).**
 
-Prefer not to build it yourself? Every push is built for macOS, Windows and
-Linux; the apps are attached to each run under the
+Prefer not to build it yourself? Every push is built for macOS, Windows,
+Linux and Android; the apps are attached to each run under the
 [Actions tab](https://github.com/morningjon/notekroft/actions/workflows/build.yml)
 (a free GitHub account is needed to download them).
 
@@ -201,7 +225,8 @@ On macOS use Cmd in place of Ctrl.
 | --- | --- |
 | `crates/notekroft-core` | Model, on-disk format, HTML sanitising, search. No UI, no network. |
 | `crates/notekroft-onenote` | Imports OneNote `.one` and `.onetoc2` files into a library. |
-| `src-tauri` | The desktop shell: a window and a thin command layer over the core. |
+| `src-tauri` | The app shell for desktop and Android: a window and a thin command layer over the core. |
+| `src-tauri/android` | The Android launcher icon, activity and alpha signing key. |
 | `ui` | The interface, in plain TypeScript with no framework. |
 | `tests/ui.mjs` | End-to-end test of the interface in headless Chromium. |
 | `CHANGELOG.md` | What changed in each version. |

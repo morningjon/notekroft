@@ -5,6 +5,10 @@
 //! is needed (importing a file, choosing the notes folder) the picker opens
 //! here on the Rust side and the person at the keyboard chooses it.
 
+// Choosing folders and importing files are desktop features for now, which
+// leaves some imports and fields unused in the phone build.
+#![cfg_attr(mobile, allow(unused_imports, unused_variables, dead_code))]
+
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -49,8 +53,11 @@ fn with<T>(
 struct LibraryInfo {
     path: String,
     default_path: String,
-    /// The folder is fixed by an environment variable and cannot be changed here.
+    /// The folder cannot be changed here: an environment variable fixes it,
+    /// or this is a phone, where notes live in the app's own storage.
     locked: bool,
+    /// Running on a phone or tablet.
+    mobile: bool,
     notice: Option<String>,
 }
 
@@ -62,6 +69,7 @@ async fn library_info(state: State<'_, AppState>) -> Cmd<LibraryInfo> {
             path: l.root().display().to_string(),
             default_path: state.default_dir.display().to_string(),
             locked: state.locked,
+            mobile: cfg!(mobile),
             notice,
         })
     })
@@ -93,79 +101,86 @@ async fn choose_library(
     state: State<'_, AppState>,
     mode: String,
 ) -> Cmd<Option<LibraryChange>> {
-    if state.locked {
-        return Err(
-            "The notes folder is set by the NOTEKROFT_LIBRARY environment variable, so it cannot be changed from here."
-                .into(),
-        );
+    #[cfg(mobile)]
+    {
+        Err("On a phone or tablet, notes are kept in the app's own storage and cannot be moved from here.".into())
     }
-    let moving = match mode.as_str() {
-        "move" => true,
-        "use" => false,
-        _ => return Err("unknown mode".into()),
-    };
-    let title = if moving {
-        "Move notes to this folder"
-    } else {
-        "Keep notes in this folder"
-    };
-    let Some(picked) = app
-        .dialog()
-        .file()
-        .set_title(title)
-        .blocking_pick_folder()
-        .and_then(|folder| folder.into_path().ok())
-    else {
-        return Ok(None);
-    };
-
-    let fail = |e: notekroft_core::Error| e.to_string();
-    let target = location::target_for(&picked).map_err(fail)?;
-    let mut lib = state
-        .lib
-        .lock()
-        .map_err(|_| "library lock poisoned".to_string())?;
-    let old = lib.root().to_path_buf();
-    let same =
-        std::fs::canonicalize(&target).ok() == std::fs::canonicalize(&old).ok() && target.exists();
-    if same {
-        return Err("Your notes are already in that folder.".into());
-    }
-
-    let had_notebooks = location::looks_like_library(&target);
-    let moved = if moving {
-        Some(location::copy_library(&old, &target).map_err(fail)?)
-    } else {
-        None
-    };
-    let opened = Library::open(&target).map_err(fail).and_then(|new| {
-        Settings {
-            library: Some(target.clone()),
+    #[cfg(desktop)]
+    {
+        if state.locked {
+            return Err(
+                "The notes folder is set by the NOTEKROFT_LIBRARY environment variable, so it cannot be changed from here."
+                    .into(),
+            );
         }
-        .save(&state.settings_file)
-        .map_err(fail)
-        .map(|()| new)
-    });
-    let new = match opened {
-        Ok(new) => new,
-        Err(err) => {
-            // Could not switch over: take the copy away again so the old
-            // folder remains the one and only home of the notes.
-            if moving {
-                location::remove_moved(&target);
+        let moving = match mode.as_str() {
+            "move" => true,
+            "use" => false,
+            _ => return Err("unknown mode".into()),
+        };
+        let title = if moving {
+            "Move notes to this folder"
+        } else {
+            "Keep notes in this folder"
+        };
+        let Some(picked) = app
+            .dialog()
+            .file()
+            .set_title(title)
+            .blocking_pick_folder()
+            .and_then(|folder| folder.into_path().ok())
+        else {
+            return Ok(None);
+        };
+
+        let fail = |e: notekroft_core::Error| e.to_string();
+        let target = location::target_for(&picked).map_err(fail)?;
+        let mut lib = state
+            .lib
+            .lock()
+            .map_err(|_| "library lock poisoned".to_string())?;
+        let old = lib.root().to_path_buf();
+        let same = std::fs::canonicalize(&target).ok() == std::fs::canonicalize(&old).ok()
+            && target.exists();
+        if same {
+            return Err("Your notes are already in that folder.".into());
+        }
+
+        let had_notebooks = location::looks_like_library(&target);
+        let moved = if moving {
+            Some(location::copy_library(&old, &target).map_err(fail)?)
+        } else {
+            None
+        };
+        let opened = Library::open(&target).map_err(fail).and_then(|new| {
+            Settings {
+                library: Some(target.clone()),
             }
-            return Err(err);
-        }
-    };
-    *lib = new;
-    let old_cleared = moving && location::remove_moved(&old);
-    Ok(Some(LibraryChange {
-        path: target.display().to_string(),
-        old_path: old.display().to_string(),
-        moved,
-        old_cleared,
-        had_notebooks,
-    }))
+            .save(&state.settings_file)
+            .map_err(fail)
+            .map(|()| new)
+        });
+        let new = match opened {
+            Ok(new) => new,
+            Err(err) => {
+                // Could not switch over: take the copy away again so the old
+                // folder remains the one and only home of the notes.
+                if moving {
+                    location::remove_moved(&target);
+                }
+                return Err(err);
+            }
+        };
+        *lib = new;
+        let old_cleared = moving && location::remove_moved(&old);
+        Ok(Some(LibraryChange {
+            path: target.display().to_string(),
+            old_path: old.display().to_string(),
+            moved,
+            old_cleared,
+            had_notebooks,
+        }))
+    }
 }
 
 #[tauri::command]
@@ -327,27 +342,34 @@ async fn import_onenote(
     state: State<'_, AppState>,
     notebook: String,
 ) -> Cmd<Option<ImportSummary>> {
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Import from OneNote")
-        .add_filter("OneNote sections and notebooks", &["one", "onetoc2"])
-        .blocking_pick_files();
-    let paths: Vec<PathBuf> = picked
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|file| file.into_path().ok())
-        .collect();
-    if paths.is_empty() {
-        return Ok(None);
+    #[cfg(mobile)]
+    {
+        Err("Importing OneNote files is not available on phones and tablets yet. Import on a computer instead.".into())
     }
-    let lib = state
-        .lib
-        .lock()
-        .map_err(|_| "library lock poisoned".to_string())?;
-    notekroft_onenote::import_files(&lib, &notebook, &paths)
-        .map(Some)
-        .map_err(|e| e.to_string())
+    #[cfg(desktop)]
+    {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Import from OneNote")
+            .add_filter("OneNote sections and notebooks", &["one", "onetoc2"])
+            .blocking_pick_files();
+        let paths: Vec<PathBuf> = picked
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|file| file.into_path().ok())
+            .collect();
+        if paths.is_empty() {
+            return Ok(None);
+        }
+        let lib = state
+            .lib
+            .lock()
+            .map_err(|_| "library lock poisoned".to_string())?;
+        notekroft_onenote::import_files(&lib, &notebook, &paths)
+            .map(Some)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// The folder forced by an environment variable, if any. The app was briefly
@@ -363,7 +385,13 @@ fn environment_dir() -> Option<PathBuf> {
 /// find, back up and sync. Anyone who used the app as TwoNote has notes in
 /// `Documents/TwoNote`; those keep working where they are rather than
 /// appearing to vanish.
+///
+/// On a phone the notes live in the app's own private storage, the one place
+/// an app can always read and write without asking for wider access.
 fn default_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    #[cfg(mobile)]
+    let base = app.path().app_data_dir()?;
+    #[cfg(desktop)]
     let base = app
         .path()
         .document_dir()
@@ -376,6 +404,7 @@ fn default_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> 
     Ok(current)
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -383,11 +412,13 @@ pub fn run() {
         .setup(|app| {
             let settings_file = app.path().app_config_dir()?.join("settings.json");
             let default_dir = default_dir(app)?;
-            let resolved = location::resolve(
-                environment_dir(),
-                &Settings::load(&settings_file),
-                default_dir.clone(),
-            );
+            // A phone has one notes folder and no way to choose another.
+            let (environment, settings) = if cfg!(mobile) {
+                (Some(default_dir.clone()), Settings::default())
+            } else {
+                (environment_dir(), Settings::load(&settings_file))
+            };
+            let resolved = location::resolve(environment, &settings, default_dir.clone());
             let lib = Library::open(&resolved.path)?;
             app.manage(AppState {
                 lib: Mutex::new(lib),

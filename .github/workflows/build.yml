@@ -1,6 +1,6 @@
 name: Build
 
-# Tests the code and builds installable apps for macOS, Windows and Linux.
+# Tests the code and builds installable apps for macOS, Windows, Linux and Android.
 # Runs on every push to main, on pull requests, on version tags, and on demand
 # from the Actions tab. The apps are attached to each run as artifacts.
 
@@ -136,3 +136,124 @@ jobs:
             ${{ matrix.bundle-dir }}/deb/*.deb
             ${{ matrix.bundle-dir }}/rpm/*.rpm
             ${{ matrix.bundle-dir }}/appimage/*.AppImage
+
+  android:
+    name: Build (Android)
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_DIR: src-tauri/gen/android/app/src/main
+      # Phones are moving to 16 KB memory pages; libraries must be aligned to suit.
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: Android
+      - run: npm ci
+      - name: Point the build at the Android tools already on the runner
+        run: |
+          ndk="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          test -d "$ndk" || { echo "::error::No Android NDK found on the runner."; exit 1; }
+          echo "NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "::notice title=Android tools::NDK $(basename "$ndk"), SDK at $ANDROID_HOME"
+      - name: Generate the Android project
+        run: |
+          npx tauri android init --ci 2>&1 | tee init.log
+          test -d "$PACKAGE_DIR/java/io/github/morningjon/notekroft"
+          cp src-tauri/android/MainActivity.kt "$PACKAGE_DIR/java/io/github/morningjon/notekroft/MainActivity.kt"
+          cp -r src-tauri/android/res/. "$PACKAGE_DIR/res/"
+      - name: Build the APK
+        run: |
+          set -o pipefail
+          npx tauri android build --apk --target aarch64 armv7 x86_64 2>&1 | tee build.log
+      - name: Sign the APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          unsigned=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | sed -n 1p)
+          test -n "$unsigned" || { echo "::error::The build finished but produced no APK."; exit 1; }
+          echo "Built: $unsigned"
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            keystore="$RUNNER_TEMP/release.keystore"; password="$KEYSTORE_PASSWORD"; alias="$KEY_ALIAS"; which="the repository's private key"
+          else
+            keystore=src-tauri/android/alpha-test.keystore; password=notekroft-alpha; alias=notekroft-alpha; which="the public alpha test key"
+          fi
+          mkdir -p out
+          apk="out/NoteKroft_${version}_android.apk"
+          "$tools/zipalign" -P 16 -f 4 "$unsigned" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-pass "pass:$password" --ks-key-alias "$alias" --key-pass "pass:$password" --out "$apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify "$apk"
+          rm -f out/*.idsig
+          info=$("$tools/aapt2" dump badging "$apk" | sed -n 1p)
+          abis=$(unzip -l "$apk" | grep -o 'lib/[^/]*/' | sort -u | tr '\n' ' ')
+          size=$(du -h "$apk" | cut -f1)
+          echo "::notice title=Android APK::$(basename "$apk"), $size, signed with $which. $info. Libraries: $abis"
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoteKroft-Android
+          if-no-files-found: error
+          path: out/*.apk
+      - name: Say why the build failed
+        if: failure()
+        run: |
+          # The full log is in the run; this puts the useful end of it on the summary page.
+          for log in init.log build.log; do
+            [ -f "$log" ] || continue
+            lines=$(grep -n -i -E "error|e: |FAILED|What went wrong|exception|not found|could not" "$log" | tail -25 | cut -c1-300)
+            [ -n "$lines" ] || lines=$(tail -25 "$log" | cut -c1-300)
+            lines="${lines//'%'/'%25'}"; lines="${lines//$'\n'/'%0A'}"; lines="${lines//$'\r'/}"
+            echo "::error title=End of $log::$lines"
+          done
+
+  android-test:
+    name: Test (Android emulator)
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: NoteKroft-Android
+          path: out
+      - name: Let the emulator use hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, open and check the app on an emulated phone
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          disable-animations: true
+          script: bash tests/android-smoke.sh out/*.apk
+      - name: Keep the screenshot and device log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-output
+          if-no-files-found: ignore
+          path: |
+            android-screen.png
+            android-logcat.txt
+            ui.xml

@@ -14,6 +14,28 @@ Version numbers live in two places that must agree: `Cargo.toml` (which the
 app and its installers use) and `package.json` (which the interface shows in
 Help, About). The build checks they match and that this file has an entry.
 
+## 0.4.2 (2026-10-11)
+
+- NoteKroft for Android. Every build now also produces an APK, which
+  installs on phones and tablets running Android 7 or later. It is the same
+  app and the same note format as on the desktop, with the same ribbon,
+  formatting and drawing.
+- A layout for narrow screens. The notebook, section and page lists move
+  into a drawer opened from a button at the top left, search moves into the
+  drawer with them, and buttons and list rows are large enough for a finger.
+  This applies to a narrow desktop window too.
+- New notes started on a narrow screen fit its width, and the handle for
+  moving a note is always visible on touch screens.
+- On Android the notes are kept in the app's own private storage. Choosing a
+  different folder and importing from OneNote are desktop-only for now, and
+  there is no sync between devices yet.
+- The Android build is checked on an emulated phone on every push (it
+  installs, starts, creates its first notebook and reopens with it intact).
+  It has not yet been used on a real phone.
+- Alpha APKs are signed with a public test key so one build can update
+  another without losing notes. See `src-tauri/android/README.md` for what
+  that does and does not mean.
+
 ## 0.4.1 (2026-10-11)
 
 - Choose where your notes are kept. File, Notes folder (or a click on the

@@ -204,7 +204,7 @@ export class Editor {
   focusFirst() {
     const contents = Array.from(this.canvas.querySelectorAll<HTMLElement>('.block.text'));
     contents.sort((a, b) => num(a.style.top) - num(b.style.top) || num(a.style.left) - num(b.style.left));
-    const el = contents[0] ?? this.addText({ kind: 'text', id: crypto.randomUUID(), x: 0, y: 0, w: DEFAULT_WIDTH, html: '' });
+    const el = contents[0] ?? this.addText({ kind: 'text', id: crypto.randomUUID(), x: 0, y: 0, w: this.defaultWidth(), html: '' });
     const content = el.querySelector<HTMLElement>('.content')!;
     content.focus();
     caretIn(content, true);
@@ -494,6 +494,21 @@ export class Editor {
     return { x: 0, y: bottom ? bottom + 16 : 0 };
   }
 
+  /** The room the page has on screen, in page pixels. */
+  private room(): number {
+    return (this.canvas.closest<HTMLElement>('.editor')?.clientWidth ?? 1200) / this.scale;
+  }
+
+  private narrow(): boolean {
+    return this.room() < 600;
+  }
+
+  /** New note containers are a comfortable reading width, or as wide as a
+   *  phone screen allows. */
+  private defaultWidth(): number {
+    return Math.round(Math.max(180, Math.min(DEFAULT_WIDTH, this.room() - 32)));
+  }
+
   /** Where a pointer event falls on the page, whatever the zoom. */
   private point(e: { clientX: number; clientY: number }): Point {
     const box = this.canvas.getBoundingClientRect();
@@ -533,7 +548,7 @@ export class Editor {
       }
     }
     const spot = this.freeSpot();
-    const el = this.addText({ kind: 'text', id: crypto.randomUUID(), ...spot, w: DEFAULT_WIDTH, html: '' });
+    const el = this.addText({ kind: 'text', id: crypto.randomUUID(), ...spot, w: this.defaultWidth(), html: '' });
     const content = el.querySelector<HTMLElement>('.content')!;
     content.focus();
     return content;
@@ -1103,12 +1118,14 @@ export class Editor {
     // Clicking empty space starts a new note right there.
     e.preventDefault();
     const [x, y] = this.point(e);
+    const width = this.defaultWidth();
     const el = this.addText({
       kind: 'text',
       id: crypto.randomUUID(),
-      x: Math.max(0, x - 10),
+      // On a narrow screen a note starts at the left edge so it fits.
+      x: this.narrow() ? 0 : Math.max(0, x - 10),
       y: Math.max(0, y - 14),
-      w: DEFAULT_WIDTH,
+      w: width,
       html: '',
     });
     el.querySelector<HTMLElement>('.content')!.focus();

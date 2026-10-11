@@ -115,8 +115,11 @@ export interface PageOrder {
 export interface LibraryInfo {
   path: string;
   defaultPath: string;
-  /** Fixed by an environment variable; cannot be changed in the app. */
+  /** Cannot be changed in the app: fixed by an environment variable, or
+   *  this is a phone. */
   locked: boolean;
+  /** Running on a phone or tablet. */
+  mobile: boolean;
   /** Something to tell the user once, such as a notes folder gone missing. */
   notice: string | null;
 }
@@ -317,7 +320,7 @@ class DemoBackend implements Backend {
 
   async libraryInfo(): Promise<LibraryInfo> {
     const path = 'Browser demo: notes are kept in this browser only';
-    return { path, defaultPath: path, locked: true, notice: null };
+    return { path, defaultPath: path, locked: true, mobile: false, notice: null };
   }
 
   async chooseLibrary(): Promise<LibraryChange | null> {

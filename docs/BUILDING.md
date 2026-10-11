@@ -9,6 +9,7 @@ then to an installable package.
 - [3. Run it](#3-run-it)
 - [4. Build a release](#4-build-a-release)
 - [5. Run the tests](#5-run-the-tests)
+- [Building for Android](#building-for-android)
 - [Useful options](#useful-options)
 - [Troubleshooting](#troubleshooting)
 
@@ -20,8 +21,9 @@ then to an installable package.
 | Other Linux distributions | Expected to work; package names below come from Tauri's documentation |
 | macOS (universal: Apple silicon and Intel) | Builds and packages on GitHub's runners; not yet run by hand |
 | Windows, x86-64 | Builds and packages on GitHub's runners; not yet run by hand |
+| Android 7 and later (arm64, arm, x86-64) | Builds on GitHub's runners and passes a start-up check on an emulated phone; not yet used on a real phone |
 
-Every push is built for all three platforms by the workflow in
+Every push is built for all of these by the workflow in
 `.github/workflows/build.yml`, and the resulting apps are attached to each
 run under the repository's Actions tab. So the macOS and Windows builds are
 known to compile and package, but nobody has yet confirmed how they behave in
@@ -245,6 +247,72 @@ Before sending a change, please also run:
 cargo fmt --all
 cargo clippy --workspace --all-targets
 ```
+
+## Building for Android
+
+You need everything in step 1, plus:
+
+- A JDK, version 17 or 21.
+- The Android SDK with a recent platform, build-tools and the NDK. The
+  simplest way to get them is Android Studio's SDK Manager.
+- The Rust targets:
+
+  ```sh
+  rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+  ```
+
+Tell the build where the SDK and NDK are (adjust the paths to your install):
+
+```sh
+export ANDROID_HOME="$HOME/Android/Sdk"
+export NDK_HOME="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)"
+```
+
+Generate the Android project, then copy NoteKroft's icon and activity over
+the generated ones. The generated project lives in `src-tauri/gen/android`,
+which is not kept in the repository, so this is needed once per checkout:
+
+```sh
+npx tauri android init
+main=src-tauri/gen/android/app/src/main
+cp src-tauri/android/MainActivity.kt $main/java/io/github/morningjon/notekroft/MainActivity.kt
+cp -r src-tauri/android/res/. $main/res/
+```
+
+To run it on a connected phone or a running emulator, with live reload:
+
+```sh
+npx tauri android dev
+```
+
+To build a release APK:
+
+```sh
+npx tauri android build --apk
+```
+
+The result is under
+`src-tauri/gen/android/app/build/outputs/apk/universal/release/` and is
+unsigned, and Android refuses to install an unsigned APK. Sign it with the
+SDK's own tools:
+
+```sh
+tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+"$tools/zipalign" -P 16 -f 4 app-universal-release-unsigned.apk aligned.apk
+"$tools/apksigner" sign --ks src-tauri/android/alpha-test.keystore \
+  --ks-pass pass:notekroft-alpha --ks-key-alias notekroft-alpha \
+  --out NoteKroft.apk aligned.apk
+```
+
+That uses the public alpha test key, which lets your build install over one
+from this repository's Actions runs and keep its notes. Read
+[src-tauri/android/README.md](../src-tauri/android/README.md) before relying
+on it for anything else. Use a keystore of your own for builds you hand out.
+
+`tests/android-smoke.sh NoteKroft.apk` installs the APK on a running
+emulator and checks that it starts, creates its first notebook and reopens.
+It needs an emulator image where `adb root` works (the "default" images, not
+the Google Play ones).
 
 ## Useful options
 

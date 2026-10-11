@@ -458,6 +458,66 @@ try {
     await page.screenshot({ path: `${OUT}05-dark.png` });
   });
 
+  await step('phone layout: lists in a drawer, search inside it, notes fit the screen', async () => {
+    const phoneContext = await browser.newContext({
+      viewport: { width: 390, height: 780 },
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 2,
+    });
+    const phone = await phoneContext.newPage();
+    phone.on('pageerror', (e) => errors.push(`phone: ${e}`));
+    phone.on('console', (m) => m.type() === 'error' && errors.push(`phone: ${m.text()}`));
+    await phone.goto('http://localhost:4317/');
+    await phone.waitForSelector('#page:not([hidden])');
+    const onScreen = async (sel) => {
+      const box = await phone.locator(sel).boundingBox();
+      return !!box && box.x >= 0 && box.x + box.width <= 390.5;
+    };
+    // Nothing spills sideways, and the lists start out of the way.
+    assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 390);
+    assert.ok(await phone.locator('#nav-toggle').isVisible());
+    assert.ok(!(await phone.locator('#nav').isVisible()));
+    assert.ok(await onScreen('#canvas > .block.text'), 'welcome note fits the screen');
+    await phone.screenshot({ path: `${OUT}06-phone.png` });
+
+    await phone.locator('#nav-toggle').tap();
+    await phone.waitForSelector('#nav.open');
+    await phone.waitForTimeout(250);
+    assert.ok(await onScreen('#nav'));
+    assert.ok(await phone.locator('#nav #search').isVisible(), 'search moves into the drawer');
+    await phone.screenshot({ path: `${OUT}07-phone-drawer.png` });
+
+    // Adding a page from the drawer, then picking one, closes it again.
+    await phone.locator('#add-page').tap();
+    await phone.waitForFunction(() => document.querySelectorAll('#pages li').length === 2);
+    await phone.locator('#pages li').first().tap();
+    await phone.waitForSelector('#nav:not(.open)', { state: 'attached' });
+    assert.equal(await phone.inputValue('#title'), 'Welcome to NoteKroft');
+
+    // Tapping the page starts a note that fits, and typing lands in it.
+    const canvas = await phone.locator('#canvas').boundingBox();
+    const last = await phone.locator('#canvas > .block.text').last().boundingBox();
+    await phone.touchscreen.tap(canvas.x + 120, last.y + last.height + 60);
+    await phone.keyboard.type('Typed on a phone');
+    assert.equal(await phone.locator('#canvas > .block.text').count(), 2);
+    assert.ok(await onScreen('#canvas > .block.text >> nth=1'), 'new note fits the screen');
+    await phone.waitForFunction(() => document.getElementById('save-state').textContent === 'All changes saved');
+
+    // The ribbon still works by touch.
+    await phone.locator('#tabs button[data-tab="draw"]').tap();
+    await phone.waitForSelector('#ribbon button[title^="Pen"], #ribbon button[title*="pen" i]');
+    await phone.screenshot({ path: `${OUT}08-phone-draw.png` });
+
+    // Search from the drawer jumps to the page and closes the drawer.
+    await phone.locator('#nav-toggle').tap();
+    await phone.waitForSelector('#nav.open');
+    await phone.locator('#search').fill('Typed on a phone');
+    await phone.locator('#search-results .hit').first().tap();
+    await phone.waitForSelector('#nav:not(.open)', { state: 'attached' });
+    await phoneContext.close();
+  });
+
   assert.deepEqual(errors, [], 'no console or page errors');
   console.log('\nAll interface checks passed.');
 } finally {

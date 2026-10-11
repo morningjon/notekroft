@@ -1730,3 +1730,178 @@ button:disabled {
     display: none;
   }
 }
+
+/* ---- narrow screens and phones ---------------------------------------------- */
+
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.nav-toggle:hover {
+  background: var(--nav);
+}
+
+.nav-backdrop {
+  display: none;
+}
+
+/* Keep clear of the status bar, notch and gesture bar when the app draws
+   edge to edge. These are all zero on a desktop. */
+#app {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.status {
+  height: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 760px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .tabs-row {
+    gap: 4px;
+    padding: 4px 6px 0;
+  }
+
+  .brand {
+    display: none;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab {
+    height: 36px;
+    padding: 0 10px;
+  }
+
+  .ribbon {
+    height: 46px;
+    margin: 4px 6px 6px;
+  }
+
+  .tool {
+    min-width: 36px;
+    height: 36px;
+  }
+
+  .workspace {
+    position: relative;
+  }
+
+  .nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(360px, 88vw);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 0.18s ease;
+    visibility: hidden;
+  }
+
+  .nav.open {
+    transform: none;
+    visibility: visible;
+  }
+
+  .nav-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 39;
+    background: rgba(18, 12, 28, 0.42);
+  }
+
+  .nav .search {
+    width: auto;
+    margin: 8px 10px 4px;
+  }
+
+  .nav .search input {
+    height: 38px;
+  }
+
+  .nav .search-results {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .nb-picker {
+    height: 48px;
+  }
+
+  .item {
+    height: 42px;
+  }
+
+  .add {
+    height: 44px;
+  }
+
+  .sheet {
+    padding: 14px 12px 0;
+  }
+
+  .page-head,
+  .title {
+    min-width: 0;
+  }
+
+  .page-head {
+    width: 100%;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .menu-item {
+    min-height: 40px;
+  }
+
+  .status {
+    height: calc(26px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  .nav {
+    transition: none;
+  }
+}
+
+/* Touch screens have no hover, so the handle for moving a note is always
+   shown, and is tall enough to put a finger on. */
+@media (pointer: coarse) {
+  .grip {
+    height: 18px;
+    background:
+      radial-gradient(circle, var(--muted) 1px, transparent 1.4px) center / 6px 4px repeat-x,
+      var(--nav);
+  }
+
+  .resize-e {
+    right: -10px;
+    width: 20px;
+  }
+}
